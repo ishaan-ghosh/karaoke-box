@@ -11,6 +11,7 @@ def test_probe_audio_rejects_a_file_without_audio(monkeypatch: pytest.MonkeyPatc
         stdout = '{"format":{"duration":"3.5"},"streams":[{"codec_type":"video"}]}'
         stderr = ""
 
+    monkeypatch.setattr(processor, "resolve_tool", lambda name: name)
     monkeypatch.setattr(processor.subprocess, "run", lambda *args, **kwargs: Result())
 
     with pytest.raises(processor.ProcessingError, match="audio stream"):
@@ -23,6 +24,7 @@ def test_probe_audio_returns_duration(monkeypatch: pytest.MonkeyPatch) -> None:
         stdout = '{"format":{"duration":"12.3456"},"streams":[{"codec_type":"audio"}]}'
         stderr = ""
 
+    monkeypatch.setattr(processor, "resolve_tool", lambda name: name)
     monkeypatch.setattr(processor.subprocess, "run", lambda *args, **kwargs: Result())
 
     assert processor.probe_audio(Path("fixture.wav"))["duration_seconds"] == 12.346

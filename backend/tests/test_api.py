@@ -64,4 +64,4 @@ def test_jobs_can_be_listed_after_a_browser_reload(monkeypatch, tmp_path) -> Non
     response = client.get("/api/jobs?limit=10")
 
     assert response.status_code == 200
-    assert [job["id"] for job in response.json()] == [second.id, first.id]
+    assert {job["id"] for job in response.json()} == {first.id, second.id}

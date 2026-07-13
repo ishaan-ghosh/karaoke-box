@@ -11,5 +11,14 @@ MAX_UPLOAD_BYTES = int(os.environ.get("KARAOKE_MAX_UPLOAD_BYTES", 250 * 1024 * 1
 MAX_DURATION_SECONDS = float(os.environ.get("KARAOKE_MAX_DURATION_SECONDS", 20 * 60))
 DEMUCS_MODEL = os.environ.get("KARAOKE_DEMUCS_MODEL", "htdemucs")
 DEMUCS_BEST_MODEL = os.environ.get("KARAOKE_DEMUCS_BEST_MODEL", "htdemucs_ft")
+SESSION_TOKEN = os.environ.get("KARAOKE_SESSION_TOKEN")
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "KARAOKE_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
 
 ALLOWED_SUFFIXES = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}

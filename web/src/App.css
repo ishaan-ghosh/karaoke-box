@@ -436,6 +436,33 @@ main {
 .primary-button:disabled { opacity: 0.38; cursor: not-allowed; }
 .primary-button > span { font-size: 18px; }
 
+.upload-progress {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.upload-progress > div {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #302d29;
+}
+
+.upload-progress > div span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--orange);
+  transition: width 120ms linear;
+}
+
+.upload-progress small {
+  color: var(--faint);
+  font: 400 9px 'DM Mono', monospace;
+  text-align: center;
+}
+
 .progress-card,
 .failed-card {
   padding: 56px 42px;
@@ -461,9 +488,37 @@ main {
 }
 
 .progress-card .muted {
-  margin: 9px 0 30px;
+  margin: 9px 0 22px;
   color: var(--faint);
   font-size: 11px;
+}
+
+.progress-readout {
+  width: min(100%, 520px);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 auto 10px;
+  text-align: left;
+}
+
+.progress-readout strong {
+  color: var(--ink);
+  font: 500 18px 'DM Mono', monospace;
+}
+
+.progress-readout span {
+  color: #8c867f;
+  font: 500 9px 'DM Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.progress-readout small {
+  color: var(--orange-light);
+  font-size: 9px;
+  text-align: right;
 }
 
 .progress-track {
@@ -636,6 +691,126 @@ input[type='range'] {
   text-underline-offset: 3px;
 }
 
+.restore-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 90px;
+  color: var(--muted);
+  font: 400 10px 'DM Mono', monospace;
+}
+
+.restore-status span {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--line);
+  border-top-color: var(--orange);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.history-card {
+  margin-top: 34px;
+  padding: 25px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(27, 26, 24, 0.7);
+}
+
+.history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 17px;
+}
+
+.history-heading .eyebrow { margin-bottom: 5px; }
+.history-heading h2 { margin: 0; font-size: 18px; letter-spacing: -0.03em; }
+.history-heading > span {
+  color: var(--faint);
+  font: 400 9px 'DM Mono', monospace;
+  text-transform: uppercase;
+}
+
+.history-list { display: grid; gap: 7px; }
+
+.history-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 13px;
+  padding: 13px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.history-row.selected {
+  border-color: rgba(239, 106, 50, 0.35);
+  background: rgba(239, 106, 50, 0.035);
+}
+
+.history-file-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #403c38;
+  border-radius: 8px;
+  color: #b0aaa3;
+  background: #1a1917;
+  font-family: Georgia, serif;
+}
+
+.history-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.history-copy strong {
+  overflow: hidden;
+  color: #d6d1c9;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-copy small { color: var(--faint); font-size: 8px; }
+
+.history-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8d8882;
+  font: 500 8px 'DM Mono', monospace;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.history-status i { width: 6px; height: 6px; border-radius: 50%; background: #77716b; }
+.history-status.active { color: var(--orange-light); }
+.history-status.active i { background: var(--orange); animation: breathe-dot 1.5s ease-in-out infinite; }
+.history-status.completed { color: #80af87; }
+.history-status.completed i { background: #76b576; }
+.history-status.failed { color: #b77b7b; }
+.history-status.failed i { background: #a85f5f; }
+
+@keyframes breathe-dot { 50% { opacity: 0.35; } }
+
+.history-actions { display: flex; align-items: center; gap: 5px; }
+.history-actions button,
+.history-actions a {
+  padding: 6px 8px;
+  border: 1px solid #403c38;
+  border-radius: 6px;
+  color: #a9a39c;
+  background: #201e1c;
+  font-size: 8px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.history-actions button:hover,
+.history-actions a:hover { color: var(--ink); border-color: #655e57; }
+.history-actions .danger { color: #9f7070; }
+.history-actions .danger:hover { color: #e09595; border-color: #784848; }
+
 .privacy-strip {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -692,6 +867,8 @@ input:focus-visible {
   .upload-card, .result-card { padding: 20px; border-radius: 14px; }
   .drop-zone { min-height: 235px; padding: 20px; }
   .progress-card, .failed-card { padding: 42px 18px; }
+  .progress-readout { grid-template-columns: auto 1fr; }
+  .progress-readout small { grid-column: 1 / -1; text-align: left; }
   .stage-list li { min-width: 0; flex: 1; font-size: 0; }
   .mixer-grid { grid-template-columns: 1fr; }
   .quality-picker legend { display: block; }
@@ -699,6 +876,10 @@ input:focus-visible {
   .quality-option { grid-template-columns: auto 1fr; }
   .quality-speed { grid-column: 2; }
   .transport { gap: 8px; padding: 13px; }
+  .history-card { padding: 17px; }
+  .history-row { grid-template-columns: auto minmax(0, 1fr); }
+  .history-status, .history-actions { grid-column: 2; }
+  .history-actions { flex-wrap: wrap; }
   .privacy-strip { grid-template-columns: auto 1fr; padding: 17px 5px; }
   .privacy-detail { display: none; }
   footer { flex-direction: column; padding: 24px 18px 32px; }

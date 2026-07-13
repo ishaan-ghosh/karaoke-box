@@ -14,8 +14,12 @@ Removing vocals does **not** remove the underlying composition's copyright or gu
 - Local filesystem storage under `data/`
 - MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads
 - 250 MB and 20-minute defaults
+- Live upload percentage, Demucs model progress, and estimated time remaining
+- Reload-safe active-job restoration and local recent-results history
 - Synchronized instrumental/vocal preview
 - Instrumental WAV export
+- pywebview desktop runtime and Windows x64 packaging pipeline
+- CPU-only PyTorch/Demucs packaging; no CUDA build
 
 There is no YouTube integration, cloud upload, account, database, or telemetry.
 
@@ -58,7 +62,23 @@ npm run web
 
 Then open <http://127.0.0.1:5173>.
 
-The first separation downloads the configured Demucs model weights. After that model download, uploaded audio and generated stems remain on this computer. Keep the API terminal open until a job completes.
+The first separation downloads the configured Demucs model weights. After that model download, uploaded audio and generated stems remain on this computer. Keep the API terminal open until a job completes. Closing or reloading the browser does not stop a job; closing the API does.
+
+### Desktop development mode
+
+Build the frontend and open it in a native pywebview window:
+
+```bash
+npm run desktop
+```
+
+Run the desktop server/session startup check without opening a window:
+
+```bash
+npm run desktop:smoke
+```
+
+Desktop mode stores jobs and model caches in the operating system's application-data directory. The Windows installer is built by `.github/workflows/windows-desktop.yml`; see `packaging/windows/README.md`.
 
 ## Test
 
@@ -81,7 +101,15 @@ data/jobs/<job-id>/
   vocals.wav
 ```
 
-Using **Process another track** deletes the completed or failed job currently shown. You can delete all local audio manually by stopping the API and removing `data/`.
+Using **Process another track** keeps the completed result in **Recent tracks**. Results can be reopened, downloaded, or explicitly deleted there. You can delete all browser-development audio manually by stopping the API and removing `data/`.
+
+The desktop app stores the equivalent structure under `%LOCALAPPDATA%\Karaoke Box` on Windows (and the platform application-data directory during macOS development). Desktop files do not expire automatically; they remain until explicitly deleted.
+
+## Reloads and job persistence
+
+The browser stores the selected job ID locally, while the API treats `data/jobs/*/job.json` as the source of truth. On reload, the UI restores that job and resumes one-second status polling. If browser storage was cleared, the UI can still discover an active job and list up to 100 recent jobs from the API.
+
+Processing is independent of the browser, but it is currently hosted inside the local API process. Stopping or restarting the API interrupts Demucs; the interrupted job is marked failed on the next startup because Demucs cannot resume from a mid-song checkpoint. Completed results remain available until explicitly deleted.
 
 ## Configuration
 
@@ -94,6 +122,9 @@ Environment variables for the API:
 | `KARAOKE_MAX_DURATION_SECONDS` | `1200` | Duration limit |
 | `KARAOKE_DEMUCS_MODEL` | `htdemucs` | Model for Natural and Strong Removal profiles |
 | `KARAOKE_DEMUCS_BEST_MODEL` | `htdemucs_ft` | Model for the Best Quality profile |
+| `KARAOKE_CORS_ORIGINS` | local Vite origins | Comma-separated allowed frontend origins |
+
+The Vite build accepts `VITE_API_BASE_URL`. Leave it empty for the local proxy and desktop app; set it only when a separately hosted API is used. See `web/.env.example`.
 
 Example:
 
@@ -113,7 +144,9 @@ Run `npm run setup`, then start the API through `npm run api` so it uses `backen
 
 ### Separation is slow
 
-The MVP deliberately uses CPU processing. Runtime varies by model, track length, and machine; a full song can take several minutes. The Best Quality profile runs a bag of fine-tuned models and can take several times longer. Progress stays on the separation stage while Demucs runs.
+The MVP deliberately uses CPU processing. Runtime varies by model, track length, and machine; a full song can take several minutes. The Best Quality profile runs a bag of fine-tuned models and can take several times longer.
+
+The UI combines Demucs's processed-audio counters across every model pass. ETA appears once the first audio segment completes and is recalculated from observed CPU speed. It can move up or down as later segments run. A first-time model download happens before measurable inference, so no reliable ETA is shown during that setup.
 
 ### The instrumental sounds muddy or watery
 
@@ -125,13 +158,16 @@ Use the least-compressed authorized source available—prefer WAV or FLAC over a
 
 ### Processing fails
 
-The UI displays the final error. More detail is retained in the job's `demucs.log` file under `data/jobs/<job-id>/`.
+The UI displays the final error. More detail is retained in the job's `demucs.log` file under `data/jobs/<job-id>/` in browser-development mode or the platform application-data directory in desktop mode.
 
 ## Repository layout
 
 ```text
-backend/        FastAPI job service and Demucs processor
-web/            React + TypeScript + Vite frontend
-docs/PLAN.md    Product and implementation roadmap
-data/           Generated local files (gitignored)
+backend/              FastAPI, Demucs processor, and desktop launcher
+web/                  React + TypeScript + Vite frontend
+packaging/windows/    PyInstaller and Inno Setup configuration
+docs/PLAN.md          Product and implementation roadmap
+docs/DESKTOP.md       Primary Windows packaging architecture
+docs/DEPLOYMENT.md    Optional hosted architecture
+data/                 Generated local files (gitignored)
 ```

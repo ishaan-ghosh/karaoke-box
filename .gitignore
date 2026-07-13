@@ -14,3 +14,9 @@ __pycache__/
 # Frontend
 web/node_modules/
 web/dist/
+
+# Desktop packaging
+build/
+dist/
+packaging/windows/build-tools/
+packaging/windows/Output/

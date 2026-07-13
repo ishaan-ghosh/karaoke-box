@@ -1,0 +1,87 @@
+name: Windows desktop build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install frontend
+        run: npm ci --prefix web
+
+      - name: Install Python desktop environment
+        run: uv sync --project backend --extra desktop
+
+      - name: Test
+        run: npm test
+
+      - name: Restore desktop extras after tests
+        run: uv sync --project backend --extra desktop
+
+      - name: Force CPU-only PyTorch for packaging
+        shell: pwsh
+        run: |
+          uv pip install --python backend/.venv/Scripts/python.exe --reinstall --no-deps `
+            --index-url https://download.pytorch.org/whl/cpu `
+            torch==2.2.2
+
+      - name: Install FFmpeg and Inno Setup
+        shell: pwsh
+        run: |
+          choco install ffmpeg innosetup -y --no-progress
+          New-Item -ItemType Directory -Force packaging/windows/build-tools | Out-Null
+          $ffmpeg = Get-ChildItem "$env:ChocolateyInstall\lib" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          $ffprobe = Get-ChildItem "$env:ChocolateyInstall\lib" -Filter ffprobe.exe -Recurse | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw "Chocolatey FFmpeg binaries were not found" }
+          Copy-Item $ffmpeg.FullName packaging/windows/build-tools/ffmpeg.exe
+          Copy-Item $ffprobe.FullName packaging/windows/build-tools/ffprobe.exe
+          Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" `
+            -OutFile packaging/windows/build-tools/MicrosoftEdgeWebView2Setup.exe
+
+      - name: Build application
+        shell: pwsh
+        env:
+          KARAOKE_BUILD_TOOLS_DIR: ${{ github.workspace }}\packaging\windows\build-tools
+        run: |
+          uv run --project backend --no-sync pyinstaller --noconfirm --clean packaging/windows/KaraokeBox.spec
+
+      - name: Smoke-test packaged service
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath dist/KaraokeBox/KaraokeBox.exe -ArgumentList "--smoke-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged smoke test failed: $($process.ExitCode)" }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows/KaraokeBox.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KaraokeBox-Windows-x64
+          path: |
+            dist/KaraokeBox/**
+            dist-installer/*.exe
+          if-no-files-found: error

@@ -53,3 +53,15 @@ def test_upload_rejects_an_unknown_quality_profile() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_jobs_can_be_listed_after_a_browser_reload(monkeypatch, tmp_path) -> None:
+    store = JobStore(tmp_path / "jobs")
+    first = store.create("first.wav", "source.wav", 10)
+    second = store.create("second.wav", "source.wav", 20)
+    monkeypatch.setattr(main, "job_store", store)
+
+    response = client.get("/api/jobs?limit=10")
+
+    assert response.status_code == 200
+    assert [job["id"] for job in response.json()] == [second.id, first.id]

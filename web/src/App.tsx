@@ -30,8 +30,13 @@ type Job = {
   progress: number
   message: string
   duration_seconds: number | null
+  eta_seconds: number | null
+  current_pass: number | null
+  total_passes: number | null
   error: string | null
   quality: SeparationQuality
+  created_at: string
+  updated_at: string
   assets: Partial<Record<'instrumental' | 'vocals', string>>
 }
 
@@ -41,6 +46,17 @@ const activeStatuses = new Set<JobStatus>([
   'separating',
   'finalizing',
 ])
+const currentJobStorageKey = 'karaoke-box.current-job-id'
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+
+function apiUrl(path: string) {
+  return `${apiBaseUrl}${path}`
+}
+
+function assetUrl(path?: string) {
+  if (!path) return undefined
+  return /^https?:\/\//.test(path) ? path : apiUrl(path)
+}
 
 const qualityOptions: Array<{
   value: SeparationQuality
@@ -81,6 +97,33 @@ function formatTime(seconds: number) {
   return `${minutes}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
 
+function formatJobDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function upsertJob(jobs: Job[], nextJob: Job) {
+  return [nextJob, ...jobs.filter(({ id }) => id !== nextJob.id)].sort((left, right) =>
+    right.created_at.localeCompare(left.created_at),
+  )
+}
+
+function formatEta(seconds: number) {
+  if (seconds < 60) {
+    const rounded = Math.max(5, Math.round(seconds / 5) * 5)
+    return `About ${rounded} seconds remaining`
+  }
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `About ${minutes} minute${minutes === 1 ? '' : 's'} remaining`
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  return `About ${hours}h${remainder ? ` ${remainder}m` : ''} remaining`
+}
+
 async function responseError(response: Response) {
   try {
     const body = (await response.json()) as { detail?: string }
@@ -88,6 +131,31 @@ async function responseError(response: Response) {
   } catch {
     return `Request failed (${response.status})`
   }
+}
+
+function uploadJob(body: FormData, onProgress: (percent: number) => void) {
+  return new Promise<Job>((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('POST', apiUrl('/api/jobs'))
+    request.responseType = 'json'
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+      }
+    }
+    request.onerror = () => reject(new Error('Could not reach the local API.'))
+    request.onabort = () => reject(new Error('Upload was cancelled.'))
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress(100)
+        resolve(request.response as Job)
+        return
+      }
+      const detail = (request.response as { detail?: string } | null)?.detail
+      reject(new Error(detail || `Upload failed (${request.status}).`))
+    }
+    request.send(body)
+  })
 }
 
 function WaveIcon() {
@@ -109,8 +177,8 @@ function StemMixer({ job }: { job: Job }) {
   const [vocalVolume, setVocalVolume] = useState(0)
   const [playbackError, setPlaybackError] = useState('')
 
-  const instrumentalUrl = job.assets.instrumental
-  const vocalsUrl = job.assets.vocals
+  const instrumentalUrl = assetUrl(job.assets.instrumental)
+  const vocalsUrl = assetUrl(job.assets.vocals)
 
   useEffect(() => {
     if (instrumentalRef.current) {
@@ -272,6 +340,20 @@ function ProgressCard({ job }: { job: Job }) {
   ]
   const currentIndex = stages.findIndex(({ status }) => status === job.status)
   const qualityName = qualityOptions.find(({ value }) => value === job.quality)?.name
+  const passLabel =
+    job.status === 'separating' && job.total_passes && job.total_passes > 1
+      ? `Model pass ${job.current_pass || 1} of ${job.total_passes}`
+      : null
+  const progressDetail =
+    job.status === 'separating'
+      ? job.eta_seconds !== null && job.progress > 0
+        ? formatEta(job.eta_seconds)
+        : job.progress > 0
+          ? 'Calculating time remaining…'
+          : 'Preparing model and audio…'
+      : job.status === 'finalizing'
+        ? 'Separation complete'
+        : 'Preparing separation…'
 
   return (
     <section className="progress-card" aria-live="polite">
@@ -283,7 +365,19 @@ function ProgressCard({ job }: { job: Job }) {
       <p className="muted">
         {job.original_filename} · {formatBytes(job.size_bytes)}
       </p>
-      <div className="progress-track" aria-label={`${job.progress}% complete`}>
+      <div className="progress-readout">
+        <strong>{job.progress}%</strong>
+        <span>{passLabel}</span>
+        <small>{progressDetail}</small>
+      </div>
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-label="Stem separation progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={job.progress}
+      >
         <span style={{ width: `${job.progress}%` }} />
       </div>
       <ol className="stage-list">
@@ -302,6 +396,65 @@ function ProgressCard({ job }: { job: Job }) {
   )
 }
 
+function JobHistory({
+  jobs,
+  currentJobId,
+  onOpen,
+  onDelete,
+}: {
+  jobs: Job[]
+  currentJobId?: string
+  onOpen: (job: Job) => void
+  onDelete: (job: Job) => void
+}) {
+  if (jobs.length === 0) return null
+
+  return (
+    <section className="history-card" aria-labelledby="history-heading">
+      <div className="history-heading">
+        <div>
+          <p className="eyebrow">Stored locally</p>
+          <h2 id="history-heading">Recent tracks</h2>
+        </div>
+        <span>{jobs.length} saved</span>
+      </div>
+      <div className="history-list">
+        {jobs.map((historyJob) => {
+          const active = activeStatuses.has(historyJob.status)
+          const selected = historyJob.id === currentJobId
+          const qualityName = qualityOptions.find(({ value }) => value === historyJob.quality)?.name
+          return (
+            <article className={`history-row ${selected ? 'selected' : ''}`} key={historyJob.id}>
+              <div className="history-file-icon" aria-hidden="true">♫</div>
+              <div className="history-copy">
+                <strong>{historyJob.original_filename}</strong>
+                <small>{qualityName} · {formatJobDate(historyJob.created_at)}</small>
+              </div>
+              <div className={`history-status ${active ? 'active' : historyJob.status}`}>
+                <i />
+                {active ? `${historyJob.progress}% processing` : historyJob.status}
+              </div>
+              <div className="history-actions">
+                {historyJob.status === 'completed' && historyJob.assets.instrumental && (
+                  <a href={`${assetUrl(historyJob.assets.instrumental)}?download=true`}>Download</a>
+                )}
+                <button type="button" onClick={() => onOpen(historyJob)}>
+                  {active ? 'Resume' : 'Open'}
+                </button>
+                {!active && (
+                  <button className="danger" type="button" onClick={() => onDelete(historyJob)}>
+                    Delete
+                  </button>
+                )}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -309,13 +462,16 @@ function App() {
   const [quality, setQuality] = useState<SeparationQuality>('preserve')
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [health, setHealth] = useState<Health | null>(null)
   const [healthError, setHealthError] = useState(false)
   const [job, setJob] = useState<Job | null>(null)
+  const [history, setHistory] = useState<Job[]>([])
+  const [restoringJobs, setRestoringJobs] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('/api/health')
+    fetch(apiUrl('/api/health'))
       .then(async (response) => {
         if (!response.ok) throw new Error(await responseError(response))
         return response.json() as Promise<Health>
@@ -325,17 +481,54 @@ function App() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    const restoreJobs = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/jobs?limit=100'))
+        if (!response.ok) throw new Error(await responseError(response))
+        const savedJobs = (await response.json()) as Job[]
+        if (cancelled) return
+        setHistory(savedJobs)
+
+        const savedId = localStorage.getItem(currentJobStorageKey)
+        const resumable = savedId
+          ? savedJobs.find(({ id }) => id === savedId)
+          : savedJobs.find(({ status }) => activeStatuses.has(status))
+        if (resumable) {
+          setJob(resumable)
+        } else if (savedId) {
+          localStorage.removeItem(currentJobStorageKey)
+        }
+      } catch {
+        // The health banner handles an unavailable API; do not hide the upload UI.
+      } finally {
+        if (!cancelled) setRestoringJobs(false)
+      }
+    }
+    void restoreJobs()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (job) localStorage.setItem(currentJobStorageKey, job.id)
+  }, [job])
+
+  useEffect(() => {
     if (!job || !activeStatuses.has(job.status)) return
 
     const timeout = window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/jobs/${job.id}`)
+        const response = await fetch(apiUrl(`/api/jobs/${job.id}`))
         if (!response.ok) throw new Error(await responseError(response))
-        setJob((await response.json()) as Job)
+        const updatedJob = (await response.json()) as Job
+        setJob(updatedJob)
+        setHistory((savedJobs) => upsertJob(savedJobs, updatedJob))
       } catch (pollError) {
         setError(pollError instanceof Error ? pollError.message : 'Could not read job status.')
       }
-    }, 1500)
+    }, 1000)
     return () => window.clearTimeout(timeout)
   }, [job])
 
@@ -348,6 +541,7 @@ function App() {
   const submit = async () => {
     if (!file || !rightsConfirmed) return
     setUploading(true)
+    setUploadProgress(0)
     setError('')
     const body = new FormData()
     body.append('file', file)
@@ -355,9 +549,9 @@ function App() {
     body.append('quality', quality)
 
     try {
-      const response = await fetch('/api/jobs', { method: 'POST', body })
-      if (!response.ok) throw new Error(await responseError(response))
-      setJob((await response.json()) as Job)
+      const createdJob = await uploadJob(body, setUploadProgress)
+      setJob(createdJob)
+      setHistory((savedJobs) => upsertJob(savedJobs, createdJob))
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Upload failed.')
     } finally {
@@ -365,16 +559,32 @@ function App() {
     }
   }
 
-  const startOver = async () => {
-    if (job && !activeStatuses.has(job.status)) {
-      await fetch(`/api/jobs/${job.id}`, { method: 'DELETE' }).catch(() => undefined)
-    }
+  const startOver = () => {
+    localStorage.removeItem(currentJobStorageKey)
     setJob(null)
     setFile(null)
     setRightsConfirmed(false)
     setQuality('preserve')
     setError('')
     if (inputRef.current) inputRef.current.value = ''
+  }
+
+  const openStoredJob = (storedJob: Job) => {
+    setJob(storedJob)
+    localStorage.setItem(currentJobStorageKey, storedJob.id)
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const deleteStoredJob = async (storedJob: Job) => {
+    try {
+      const response = await fetch(apiUrl(`/api/jobs/${storedJob.id}`), { method: 'DELETE' })
+      if (!response.ok) throw new Error(await responseError(response))
+      setHistory((savedJobs) => savedJobs.filter(({ id }) => id !== storedJob.id))
+      if (job?.id === storedJob.id) startOver()
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Could not delete the job.')
+    }
   }
 
   const missingTools = health
@@ -416,7 +626,13 @@ function App() {
         )}
         {error && <div className="error-alert" role="alert">{error}</div>}
 
-        {!job && (
+        {restoringJobs && (
+          <div className="restore-status" aria-live="polite">
+            <span /> Loading saved jobs…
+          </div>
+        )}
+
+        {!restoringJobs && !job && (
           <section className="upload-card" aria-labelledby="upload-heading">
             <div className="card-heading">
               <span>01</span>
@@ -518,9 +734,23 @@ function App() {
               disabled={!file || !rightsConfirmed || uploading || health?.ready === false}
               onClick={submit}
             >
-              {uploading ? 'Uploading…' : 'Separate vocals'}
+              {uploading ? `Uploading ${uploadProgress}%` : 'Separate vocals'}
               <span aria-hidden="true">→</span>
             </button>
+            {uploading && (
+              <div className="upload-progress" aria-live="polite">
+                <div
+                  role="progressbar"
+                  aria-label="File upload progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={uploadProgress}
+                >
+                  <span style={{ width: `${uploadProgress}%` }} />
+                </div>
+                <small>{uploadProgress}% of the file sent to the local API</small>
+              </div>
+            )}
           </section>
         )}
 
@@ -543,11 +773,20 @@ function App() {
           </>
         )}
 
+        {!restoringJobs && (
+          <JobHistory
+            jobs={history}
+            currentJobId={job?.id}
+            onOpen={openStoredJob}
+            onDelete={(storedJob) => void deleteStoredJob(storedJob)}
+          />
+        )}
+
         <section className="privacy-strip">
           <div className="privacy-icon" aria-hidden="true">⌂</div>
           <div>
             <strong>Your audio stays on this computer</strong>
-            <p>Uploads and stems are written only to the local <code>data/</code> directory.</p>
+            <p>Sources and stems are stored only in Karaoke Box’s local application data.</p>
           </div>
           <div className="privacy-detail">
             <span>CPU processing</span>

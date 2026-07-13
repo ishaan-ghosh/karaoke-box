@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
-import sys
+import time
+from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .config import MAX_DURATION_SECONDS
 from .profiles import DEFAULT_QUALITY, SeparationQuality, get_profile
+from .runtime import demucs_command, resolve_tool
 
 ProgressCallback = Callable[..., None]
 
@@ -19,10 +23,63 @@ class ProcessingError(RuntimeError):
     """An expected media-processing failure that can be shown to the user."""
 
 
+_BAG_SIZE_PATTERN = re.compile(r"Selected model is a bag of (?P<count>\d+) models?")
+_PROGRESS_PATTERN = re.compile(
+    r"(?P<percent>\d{1,3})%\|.*?\|\s*"
+    r"(?P<current>\d+(?:\.\d+)?)/(?P<total>\d+(?:\.\d+)?)\s*"
+    r"\[[^\]]*(?:seconds/s|s/seconds)\]"
+)
+
+
+@dataclass(frozen=True)
+class DemucsProgress:
+    fraction: float
+    current_pass: int
+    total_passes: int
+
+
+class DemucsProgressTracker:
+    """Combine Demucs/tqdm progress bars into one fraction across model passes."""
+
+    def __init__(self, expected_passes: int):
+        self.total_passes = max(1, expected_passes)
+        self.current_pass = 1
+        self._last_pass_fraction = 0.0
+
+    def feed(self, line: str) -> DemucsProgress | None:
+        bag_match = _BAG_SIZE_PATTERN.search(line)
+        if bag_match:
+            self.total_passes = max(1, int(bag_match.group("count")))
+
+        progress_match = _PROGRESS_PATTERN.search(line)
+        if progress_match is None:
+            return None
+
+        current = float(progress_match.group("current"))
+        total = float(progress_match.group("total"))
+        if total <= 0:
+            return None
+        pass_fraction = min(1.0, max(0.0, current / total))
+
+        # tqdm prints a fresh bar for every model in a bag. A reset after a nearly
+        # complete bar marks the next pass; duplicate 100% lines remain in one pass.
+        if pass_fraction < 0.1 and self._last_pass_fraction >= 0.9:
+            self.current_pass = min(self.total_passes, self.current_pass + 1)
+        self._last_pass_fraction = pass_fraction
+
+        completed_passes = self.current_pass - 1
+        overall = (completed_passes + pass_fraction) / self.total_passes
+        return DemucsProgress(
+            fraction=min(1.0, overall),
+            current_pass=self.current_pass,
+            total_passes=self.total_passes,
+        )
+
+
 def tool_status() -> dict[str, bool]:
     return {
-        "ffmpeg": shutil.which("ffmpeg") is not None,
-        "ffprobe": shutil.which("ffprobe") is not None,
+        "ffmpeg": resolve_tool("ffmpeg") is not None,
+        "ffprobe": resolve_tool("ffprobe") is not None,
         "demucs": importlib.util.find_spec("demucs") is not None,
     }
 
@@ -37,8 +94,11 @@ def ensure_tools() -> None:
 
 
 def probe_audio(source: Path) -> dict[str, Any]:
+    ffprobe = resolve_tool("ffprobe")
+    if ffprobe is None:
+        raise ProcessingError("Missing required tool: ffprobe.")
     command = [
-        "ffprobe",
+        ffprobe,
         "-v",
         "error",
         "-show_entries",
@@ -86,20 +146,21 @@ def process_job(
     log_path = job_dir / "demucs.log"
     profile = get_profile(quality)
 
-    update(status="validating", progress=10, message="Checking audio file")
+    update(status="validating", progress=0, message="Checking audio file")
     ensure_tools()
     probe = probe_audio(source)
     update(
         status="separating",
-        progress=20,
+        progress=0,
         message=profile.progress_message,
         duration_seconds=probe["duration_seconds"],
+        eta_seconds=None,
+        current_pass=1,
+        total_passes=profile.model_passes,
     )
 
     command = [
-        sys.executable,
-        "-m",
-        "demucs",
+        *demucs_command(),
         "--two-stems",
         "vocals",
         "--device",
@@ -114,13 +175,67 @@ def process_job(
         str(work_dir),
         str(source),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    log_path.write_text(
-        f"$ {' '.join(command)}\n\nSTDOUT\n{result.stdout}\n\nSTDERR\n{result.stderr}",
-        encoding="utf-8",
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
+    tracker = DemucsProgressTracker(profile.model_passes)
+    process_started_at = time.monotonic()
+    work_started_at: float | None = None
+    last_update_at = 0.0
+    last_progress = -1
+    output_tail: deque[str] = deque(maxlen=40)
+
+    with log_path.open("w", encoding="utf-8") as log:
+        log.write(f"$ {' '.join(command)}\n\nOUTPUT\n")
+        log.flush()
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            bufsize=1,
+        )
+        if process.stdout is None:
+            raise ProcessingError("Could not read Demucs progress output.")
+
+        for output_line in process.stdout:
+            log.write(output_line)
+            stripped = output_line.strip()
+            if stripped:
+                output_tail.append(stripped)
+
+            snapshot = tracker.feed(output_line)
+            if snapshot is None:
+                continue
+
+            now = time.monotonic()
+            progress = min(100, round(snapshot.fraction * 100))
+            if work_started_at is None:
+                # Demucs emits a 0% bar after model download/loading. Starting
+                # here avoids treating one-time setup as recurring work in ETA.
+                work_started_at = now if snapshot.fraction < 0.01 else process_started_at
+            elapsed = max(0.0, now - work_started_at)
+            eta_seconds = None
+            if snapshot.fraction >= 0.01 and snapshot.fraction < 1:
+                eta_seconds = max(
+                    1,
+                    round(elapsed * (1 - snapshot.fraction) / snapshot.fraction),
+                )
+
+            # Polling is once per second, so avoid rewriting job.json for every
+            # tqdm refresh while still emitting changed percentages promptly.
+            if progress != last_progress and (now - last_update_at >= 0.4 or progress == 100):
+                update(
+                    progress=progress,
+                    eta_seconds=eta_seconds,
+                    current_pass=snapshot.current_pass,
+                    total_passes=snapshot.total_passes,
+                )
+                last_progress = progress
+                last_update_at = now
+
+        return_code = process.wait()
+
+    if return_code != 0:
+        detail = "\n".join(output_tail)
         raise ProcessingError(
             "Demucs could not separate this track. "
             f"See {log_path.name} for details. {detail[-1000:]}"
@@ -133,8 +248,18 @@ def process_job(
     if not instrumental_source.is_file() or not vocals_source.is_file():
         raise ProcessingError("Demucs finished without producing the expected stems.")
 
-    update(status="finalizing", progress=92, message="Preparing full-quality WAV files")
+    update(
+        status="finalizing",
+        progress=100,
+        message="Preparing full-quality WAV files",
+        eta_seconds=None,
+    )
     shutil.move(str(instrumental_source), job_dir / "instrumental.wav")
     shutil.move(str(vocals_source), job_dir / "vocals.wav")
     shutil.rmtree(work_dir, ignore_errors=True)
-    update(status="completed", progress=100, message="Your karaoke track is ready")
+    update(
+        status="completed",
+        progress=100,
+        message="Your karaoke track is ready",
+        eta_seconds=None,
+    )

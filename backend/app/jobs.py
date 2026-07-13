@@ -33,6 +33,9 @@ class Job(BaseModel):
     progress: int = 0
     message: str = "Waiting to start"
     duration_seconds: float | None = None
+    eta_seconds: int | None = None
+    current_pass: int | None = None
+    total_passes: int | None = None
     error: str | None = None
     quality: SeparationQuality = DEFAULT_QUALITY
     created_at: str
@@ -93,6 +96,16 @@ class JobStore:
             self._write(updated)
             return updated
 
+    def list(self, limit: int = 50) -> list[Job]:
+        with self._lock:
+            jobs = [
+                job
+                for path in self.jobs_dir.glob("*/job.json")
+                if (job := self.get(path.parent.name)) is not None
+            ]
+        jobs.sort(key=lambda job: job.created_at, reverse=True)
+        return jobs[:limit]
+
     def delete(self, job_id: str) -> bool:
         with self._lock:
             job = self.get(job_id)
@@ -121,6 +134,7 @@ class JobStore:
                     status="failed",
                     progress=job.progress,
                     message="Processing was interrupted",
+                    eta_seconds=None,
                     error="The local API stopped before this job finished. Please upload it again.",
                 )
 
@@ -129,9 +143,16 @@ class JobManager:
     def __init__(self, store: JobStore):
         self.store = store
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="karaoke-job")
+        self._shutdown = False
 
     def submit(self, job_id: str) -> None:
+        if self._shutdown:
+            raise RuntimeError("The job manager is shutting down.")
         self._executor.submit(self._run, job_id)
+
+    def shutdown(self) -> None:
+        self._shutdown = True
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _run(self, job_id: str) -> None:
         job = self.store.get(job_id)
@@ -149,6 +170,7 @@ class JobManager:
                 job.id,
                 status="failed",
                 message="Separation failed",
+                eta_seconds=None,
                 error=str(exc)[:4000],
             )
         except Exception as exc:  # Keep a failed local job inspectable instead of losing it.
@@ -156,5 +178,6 @@ class JobManager:
                 job.id,
                 status="failed",
                 message="Unexpected processing error",
+                eta_seconds=None,
                 error=f"{type(exc).__name__}: {exc}"[:4000],
             )

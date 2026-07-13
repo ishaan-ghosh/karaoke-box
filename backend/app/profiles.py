@@ -14,6 +14,7 @@ class SeparationProfile:
     model: str
     other_method: Literal["add", "minus"]
     instrumental_stem: Literal["no_vocals", "minus_vocals"]
+    model_passes: int
     progress_message: str
 
 
@@ -22,18 +23,21 @@ QUALITY_PROFILES: dict[SeparationQuality, SeparationProfile] = {
         model=DEMUCS_MODEL,
         other_method="minus",
         instrumental_stem="minus_vocals",
+        model_passes=1,
         progress_message="Preserving the backing while removing predicted vocals",
     ),
     "best": SeparationProfile(
         model=DEMUCS_BEST_MODEL,
         other_method="minus",
         instrumental_stem="minus_vocals",
+        model_passes=4,
         progress_message="Running the fine-tuned model on CPU — this will take longer",
     ),
     "standard": SeparationProfile(
         model=DEMUCS_MODEL,
         other_method="add",
         instrumental_stem="no_vocals",
+        model_passes=1,
         progress_message="Separating and summing the predicted instrument stems",
     ),
 }

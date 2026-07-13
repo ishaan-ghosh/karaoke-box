@@ -1,22 +1,31 @@
 from __future__ import annotations
 
+import secrets
 import shutil
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
-from .config import ALLOWED_SUFFIXES, JOBS_DIR, MAX_UPLOAD_BYTES
+from .config import (
+    ALLOWED_SUFFIXES,
+    CORS_ORIGINS,
+    JOBS_DIR,
+    MAX_UPLOAD_BYTES,
+    SESSION_TOKEN,
+)
 from .jobs import ACTIVE_STATUSES, Job, JobManager, JobStore
 from .processor import tool_status
 from .profiles import DEFAULT_QUALITY, SeparationQuality
+from .runtime import web_dist_dir
 
 app = FastAPI(title="Karaoke Box API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
@@ -24,6 +33,30 @@ app.add_middleware(
 
 job_store = JobStore(JOBS_DIR)
 job_manager = JobManager(job_store)
+
+
+@app.middleware("http")
+async def require_desktop_session(request: Request, call_next):
+    if SESSION_TOKEN and request.url.path.startswith("/api/"):
+        cookie = request.cookies.get("karaoke_session", "")
+        if not secrets.compare_digest(cookie, SESSION_TOKEN):
+            return JSONResponse({"detail": "Invalid desktop session."}, status_code=401)
+    return await call_next(request)
+
+
+@app.get("/desktop/start", include_in_schema=False)
+def start_desktop_session(token: str) -> RedirectResponse:
+    if not SESSION_TOKEN or not secrets.compare_digest(token, SESSION_TOKEN):
+        raise HTTPException(status_code=404, detail="Not found.")
+    response = RedirectResponse("/", status_code=302)
+    response.set_cookie(
+        "karaoke_session",
+        SESSION_TOKEN,
+        httponly=True,
+        samesite="strict",
+        secure=False,
+    )
+    return response
 
 
 def public_job(job: Job) -> dict[str, Any]:
@@ -90,6 +123,11 @@ async def create_job(
     return public_job(job)
 
 
+@app.get("/api/jobs")
+def list_jobs(limit: Annotated[int, Query(ge=1, le=100)] = 50) -> list[dict[str, Any]]:
+    return [public_job(job) for job in job_store.list(limit)]
+
+
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
     job = job_store.get(job_id)
@@ -126,3 +164,8 @@ def delete_job(job_id: str) -> None:
     if job.status in ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail="Wait for the active job to finish.")
     job_store.delete(job_id)
+
+
+_frontend = web_dist_dir()
+if _frontend.is_dir():
+    app.mount("/", StaticFiles(directory=_frontend, html=True), name="frontend")

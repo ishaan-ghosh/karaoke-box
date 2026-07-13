@@ -73,6 +73,7 @@ class _ApiServer(threading.Thread):
             app,
             host="127.0.0.1",
             port=port,
+            log_config=None,
             log_level="warning",
             access_log=False,
         )

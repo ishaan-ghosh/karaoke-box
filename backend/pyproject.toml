@@ -1,0 +1,25 @@
+[project]
+name = "karaoke-box-api"
+version = "0.1.0"
+description = "Local audio separation API for Karaoke Box"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "demucs>=4.0.1,<5",
+  "fastapi>=0.116,<1",
+  "numpy>=1.26,<2",
+  "python-multipart>=0.0.20,<1",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8.4,<9",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.uv]
+package = false

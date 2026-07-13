@@ -1,0 +1,14 @@
+{
+  "name": "karaoke-box",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "setup": "uv sync --project backend && npm --prefix web install",
+    "api": "uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
+    "web": "npm --prefix web run dev",
+    "test:api": "cd backend && uv run pytest -q",
+    "test:web": "npm --prefix web run lint && npm --prefix web run build",
+    "test": "npm run test:api && npm run test:web",
+    "build": "npm --prefix web run build"
+  }
+}

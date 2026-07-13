@@ -1,0 +1,16 @@
+.DS_Store
+.env
+*.log
+
+# Local audio and model output
+data/
+
+# Python
+backend/.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Frontend
+web/node_modules/
+web/dist/

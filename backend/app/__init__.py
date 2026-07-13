@@ -1,0 +1,1 @@
+"""Karaoke Box local API."""

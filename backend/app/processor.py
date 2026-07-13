@@ -81,11 +81,17 @@ def tool_status() -> dict[str, bool]:
         "ffmpeg": resolve_tool("ffmpeg") is not None,
         "ffprobe": resolve_tool("ffprobe") is not None,
         "demucs": importlib.util.find_spec("demucs") is not None,
+        "yt-dlp": importlib.util.find_spec("yt_dlp") is not None,
     }
 
 
 def ensure_tools() -> None:
-    missing = [name for name, available in tool_status().items() if not available]
+    required = {
+        "ffmpeg": resolve_tool("ffmpeg") is not None,
+        "ffprobe": resolve_tool("ffprobe") is not None,
+        "demucs": importlib.util.find_spec("demucs") is not None,
+    }
+    missing = [name for name, available in required.items() if not available]
     if missing:
         raise ProcessingError(
             f"Missing required tool{'s' if len(missing) > 1 else ''}: {', '.join(missing)}. "

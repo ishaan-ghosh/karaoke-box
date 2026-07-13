@@ -10,6 +10,7 @@ Karaoke Box.exe
   |-- compiled React/Vite assets
   |-- FastAPI on a random loopback port
   |-- local job worker process
+  |-- pinned yt-dlp YouTube ingest
   |-- FFmpeg/ffprobe executables
   |-- Demucs + CPU-only PyTorch
   |-- JSON job metadata
@@ -55,6 +56,7 @@ Use `platformdirs` rather than repository-relative paths.
     job.json
     source.<extension>
     demucs.log
+    yt-dlp.log
     instrumental.wav
     vocals.wav
   logs\
@@ -75,13 +77,14 @@ Use PyInstaller in **onedir** mode:
 - allows the installer to update individual packaged files,
 - starts faster than one-file mode.
 
-The packaged launcher needs a special worker entry point. In a frozen app, `sys.executable -m demucs` does not work because `sys.executable` points to `Karaoke Box.exe`. The executable should support an internal command such as:
+The packaged launcher needs special worker entry points. In a frozen app, `sys.executable -m demucs` and `sys.executable -m yt_dlp` do not work because `sys.executable` points to `Karaoke Box.exe`. The executable supports private commands such as:
 
 ```text
 Karaoke Box.exe --internal-demucs <demucs arguments>
+Karaoke Box.exe --internal-ytdlp <yt-dlp arguments>
 ```
 
-Development continues to use `python -m demucs`; the processor chooses the command through a runtime adapter.
+Development continues to use Python module commands; the processor and YouTube ingest adapter choose the correct command through runtime adapters.
 
 ### Frontend
 
@@ -135,7 +138,7 @@ A Windows machine should then test:
 - clean install and uninstall,
 - startup without developer tools or Python installed,
 - WebView2 detection,
-- MP3/WAV/FLAC input,
+- MP3/WAV/FLAC input and an individual YouTube URL,
 - paths containing spaces and non-ASCII characters,
 - progress and ETA,
 - window close during processing,

@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict
 
 from .config import (
     ALLOWED_SUFFIXES,
@@ -20,7 +21,9 @@ from .config import (
 from .jobs import ACTIVE_STATUSES, Job, JobManager, JobStore
 from .processor import tool_status
 from .profiles import DEFAULT_QUALITY, SeparationQuality
+from .rights import RIGHTS_ATTESTATION_VERSION
 from .runtime import web_dist_dir
+from .youtube import YouTubeUrlError, classify_youtube_url
 
 app = FastAPI(title="Karaoke Box API", version="0.1.0")
 app.add_middleware(
@@ -70,6 +73,16 @@ def public_job(job: Job) -> dict[str, Any]:
     return payload
 
 
+def require_rights_confirmation(rights_confirmed: bool, attestation_version: str) -> None:
+    if not rights_confirmed:
+        raise HTTPException(
+            status_code=400,
+            detail="Confirm that you are allowed to process and export this source recording.",
+        )
+    if attestation_version != RIGHTS_ATTESTATION_VERSION:
+        raise HTTPException(status_code=400, detail="This rights confirmation is out of date.")
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     tools = tool_status()
@@ -80,13 +93,10 @@ def health() -> dict[str, Any]:
 async def create_job(
     file: Annotated[UploadFile, File()],
     rights_confirmed: Annotated[bool, Form()],
+    attestation_version: Annotated[str, Form()],
     quality: Annotated[SeparationQuality, Form()] = DEFAULT_QUALITY,
 ) -> dict[str, Any]:
-    if not rights_confirmed:
-        raise HTTPException(
-            status_code=400,
-            detail="Confirm that you are allowed to process this recording.",
-        )
+    require_rights_confirmation(rights_confirmed, attestation_version)
 
     original_filename = Path(file.filename or "audio").name
     suffix = Path(original_filename).suffix.lower()
@@ -95,7 +105,13 @@ async def create_job(
         raise HTTPException(status_code=415, detail=f"Unsupported file type. Use: {allowed}")
 
     # Create metadata first so the job directory has an unpredictable, server-owned path.
-    job = job_store.create(original_filename, f"source{suffix}", 0, quality)
+    job = job_store.create(
+        original_filename,
+        f"source{suffix}",
+        0,
+        quality,
+        source_type="upload",
+    )
     source_path = job_store.job_dir(job.id) / job.source_filename
     size = 0
     try:
@@ -119,6 +135,37 @@ async def create_job(
         raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
     job = job_store.update(job.id, size_bytes=size)
+    job_manager.submit(job.id)
+    return public_job(job)
+
+
+class YouTubeJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    rights_confirmed: bool
+    attestation_version: str
+    quality: SeparationQuality = DEFAULT_QUALITY
+
+
+@app.post("/api/jobs/youtube", status_code=202)
+def create_youtube_job(request: YouTubeJobRequest) -> dict[str, Any]:
+    require_rights_confirmation(request.rights_confirmed, request.attestation_version)
+    try:
+        source = classify_youtube_url(request.url)
+    except YouTubeUrlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    job = job_store.create(
+        f"YouTube video {source.video_id}",
+        "source.pending",
+        0,
+        request.quality,
+        source_type="youtube",
+        source_url=source.canonical_url,
+        canonical_url=source.canonical_url,
+        video_id=source.video_id,
+    )
     job_manager.submit(job.id)
     return public_job(job)
 

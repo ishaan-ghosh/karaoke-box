@@ -14,8 +14,11 @@ type Health = {
 
 type SeparationQuality = 'preserve' | 'best' | 'standard'
 
+type SourceType = 'upload' | 'youtube'
+
 type JobStatus =
   | 'queued'
+  | 'ingesting'
   | 'validating'
   | 'separating'
   | 'finalizing'
@@ -25,6 +28,20 @@ type JobStatus =
 type Job = {
   id: string
   original_filename: string
+  source_type: SourceType
+  source_url: string | null
+  canonical_url: string | null
+  video_id: string | null
+  title: string | null
+  uploader: string | null
+  uploader_id: string | null
+  channel: string | null
+  channel_id: string | null
+  extractor: string | null
+  fetched_at: string | null
+  rights_attestation_version: string
+  rights_attestation_text: string
+  rights_confirmed_at: string | null
   size_bytes: number
   status: JobStatus
   progress: number
@@ -42,11 +59,15 @@ type Job = {
 
 const activeStatuses = new Set<JobStatus>([
   'queued',
+  'ingesting',
   'validating',
   'separating',
   'finalizing',
 ])
 const currentJobStorageKey = 'karaoke-box.current-job-id'
+const rightsAttestationVersion = '1'
+const rightsAttestationText =
+  'I confirm that I own this source recording or am authorized to use it, including downloading it when I provide a URL, and that I am permitted to process and export it.'
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 
 function apiUrl(path: string) {
@@ -106,6 +127,10 @@ function formatJobDate(value: string) {
   }).format(new Date(value))
 }
 
+function jobDisplayName(job: Job) {
+  return job.source_type === 'youtube' && job.title ? job.title : job.original_filename
+}
+
 function upsertJob(jobs: Job[], nextJob: Job) {
   return [nextJob, ...jobs.filter(({ id }) => id !== nextJob.id)].sort((left, right) =>
     right.created_at.localeCompare(left.created_at),
@@ -158,6 +183,21 @@ function uploadJob(body: FormData, onProgress: (percent: number) => void) {
   })
 }
 
+async function createYoutubeJob(url: string, quality: SeparationQuality) {
+  const response = await fetch(apiUrl('/api/jobs/youtube'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url,
+      rights_confirmed: true,
+      attestation_version: rightsAttestationVersion,
+      quality,
+    }),
+  })
+  if (!response.ok) throw new Error(await responseError(response))
+  return (await response.json()) as Job
+}
+
 function WaveIcon() {
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -170,6 +210,9 @@ function StemMixer({ job }: { job: Job }) {
   const instrumentalRef = useRef<HTMLAudioElement>(null)
   const vocalsRef = useRef<HTMLAudioElement>(null)
   const frameRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const instrumentalGainRef = useRef<GainNode | null>(null)
+  const vocalGainRef = useRef<GainNode | null>(null)
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(job.duration_seconds ?? 0)
@@ -180,26 +223,65 @@ function StemMixer({ job }: { job: Job }) {
   const instrumentalUrl = assetUrl(job.assets.instrumental)
   const vocalsUrl = assetUrl(job.assets.vocals)
 
+  const ensureAudioGraph = () => {
+    const instrumental = instrumentalRef.current
+    const vocals = vocalsRef.current
+    if (!instrumental || !vocals) return null
+    if (audioContextRef.current) return audioContextRef.current
+
+    const context = new AudioContext()
+    const instrumentalGain = context.createGain()
+    const vocalGain = context.createGain()
+    context.createMediaElementSource(instrumental).connect(instrumentalGain).connect(context.destination)
+    context.createMediaElementSource(vocals).connect(vocalGain).connect(context.destination)
+    instrumentalGain.gain.value = instrumentalVolume
+    vocalGain.gain.value = vocalVolume
+    instrumental.volume = 1
+    vocals.volume = 1
+    audioContextRef.current = context
+    instrumentalGainRef.current = instrumentalGain
+    vocalGainRef.current = vocalGain
+    return context
+  }
+
   useEffect(() => {
-    if (instrumentalRef.current) {
-      instrumentalRef.current.volume = instrumentalVolume
-    }
+    const context = audioContextRef.current
+    const gain = instrumentalGainRef.current
+    if (!context || !gain) return
+    gain.gain.cancelScheduledValues(context.currentTime)
+    gain.gain.setValueAtTime(gain.gain.value, context.currentTime)
+    gain.gain.linearRampToValueAtTime(instrumentalVolume, context.currentTime + 0.015)
   }, [instrumentalVolume])
 
   useEffect(() => {
-    if (vocalsRef.current) vocalsRef.current.volume = vocalVolume
+    const context = audioContextRef.current
+    const gain = vocalGainRef.current
+    if (!context || !gain) return
+    gain.gain.cancelScheduledValues(context.currentTime)
+    gain.gain.setValueAtTime(gain.gain.value, context.currentTime)
+    gain.gain.linearRampToValueAtTime(vocalVolume, context.currentTime + 0.015)
   }, [vocalVolume])
+
+  useEffect(() => {
+    const instrumental = instrumentalRef.current
+    const vocals = vocalsRef.current
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      instrumental?.pause()
+      vocals?.pause()
+      const context = audioContextRef.current
+      if (context && context.state !== 'closed') void context.close()
+    }
+  }, [])
 
   useEffect(() => {
     if (!playing) return
 
     const updateTime = () => {
       const instrumental = instrumentalRef.current
-      const vocals = vocalsRef.current
-      if (!instrumental || !vocals) return
-      if (Math.abs(instrumental.currentTime - vocals.currentTime) > 0.08) {
-        vocals.currentTime = instrumental.currentTime
-      }
+      if (!instrumental) return
+      // Both stems continue playing at normal speed. This loop only paints the
+      // transport; it must never seek or change either media clock.
       setCurrentTime(instrumental.currentTime)
       frameRef.current = requestAnimationFrame(updateTime)
     }
@@ -222,8 +304,13 @@ function StemMixer({ job }: { job: Job }) {
     }
 
     setPlaybackError('')
-    vocals.currentTime = instrumental.currentTime
     try {
+      const context = ensureAudioGraph()
+      if (!context) return
+      await context.resume()
+      // Align once while paused. The player then leaves both local WAV streams
+      // running continuously, even when a gain slider is at zero.
+      vocals.currentTime = instrumental.currentTime
       await Promise.all([instrumental.play(), vocals.play()])
       setPlaying(true)
     } catch {
@@ -308,7 +395,7 @@ function StemMixer({ job }: { job: Job }) {
       <audio
         ref={instrumentalRef}
         src={instrumentalUrl}
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
         onEnded={(event) => {
           event.currentTarget.currentTime = 0
@@ -320,7 +407,7 @@ function StemMixer({ job }: { job: Job }) {
           setCurrentTime(0)
         }}
       />
-      <audio ref={vocalsRef} src={vocalsUrl} preload="metadata" />
+      <audio ref={vocalsRef} src={vocalsUrl} preload="auto" />
 
       <a className="primary-button download" href={`${instrumentalUrl}?download=true`}>
         <span aria-hidden="true">↓</span>
@@ -331,13 +418,22 @@ function StemMixer({ job }: { job: Job }) {
 }
 
 function ProgressCard({ job }: { job: Job }) {
-  const stages: Array<{ status: JobStatus; label: string }> = [
-    { status: 'queued', label: 'Upload received' },
-    { status: 'validating', label: 'Validate audio' },
-    { status: 'separating', label: 'Separate stems' },
-    { status: 'finalizing', label: 'Prepare WAV files' },
-    { status: 'completed', label: 'Ready' },
-  ]
+  const stages: Array<{ status: JobStatus; label: string }> = job.source_type === 'youtube'
+    ? [
+        { status: 'queued', label: 'Source received' },
+        { status: 'ingesting', label: 'Fetch source' },
+        { status: 'validating', label: 'Validate audio' },
+        { status: 'separating', label: 'Separate stems' },
+        { status: 'finalizing', label: 'Prepare WAV files' },
+        { status: 'completed', label: 'Ready' },
+      ]
+    : [
+        { status: 'queued', label: 'Upload received' },
+        { status: 'validating', label: 'Validate audio' },
+        { status: 'separating', label: 'Separate stems' },
+        { status: 'finalizing', label: 'Prepare WAV files' },
+        { status: 'completed', label: 'Ready' },
+      ]
   const currentIndex = stages.findIndex(({ status }) => status === job.status)
   const qualityName = qualityOptions.find(({ value }) => value === job.quality)?.name
   const passLabel =
@@ -345,15 +441,17 @@ function ProgressCard({ job }: { job: Job }) {
       ? `Model pass ${job.current_pass || 1} of ${job.total_passes}`
       : null
   const progressDetail =
-    job.status === 'separating'
-      ? job.eta_seconds !== null && job.progress > 0
-        ? formatEta(job.eta_seconds)
-        : job.progress > 0
-          ? 'Calculating time remaining…'
-          : 'Preparing model and audio…'
-      : job.status === 'finalizing'
-        ? 'Separation complete'
-        : 'Preparing separation…'
+    job.status === 'ingesting'
+      ? 'Fetching the best available audio source…'
+      : job.status === 'separating'
+        ? job.eta_seconds !== null && job.progress > 0
+          ? formatEta(job.eta_seconds)
+          : job.progress > 0
+            ? 'Calculating time remaining…'
+            : 'Preparing model and audio…'
+        : job.status === 'finalizing'
+          ? 'Separation complete'
+          : 'Preparing separation…'
 
   return (
     <section className="progress-card" aria-live="polite">
@@ -363,7 +461,7 @@ function ProgressCard({ job }: { job: Job }) {
       <p className="eyebrow">{qualityName || 'CPU separation'} · CPU</p>
       <h2>{job.message}</h2>
       <p className="muted">
-        {job.original_filename} · {formatBytes(job.size_bytes)}
+        {jobDisplayName(job)} · {job.size_bytes > 0 ? formatBytes(job.size_bytes) : 'YouTube source'}
       </p>
       <div className="progress-readout">
         <strong>{job.progress}%</strong>
@@ -457,7 +555,9 @@ function JobHistory({
 
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [sourceType, setSourceType] = useState<SourceType>('upload')
   const [file, setFile] = useState<File | null>(null)
+  const [youtubeUrl, setYoutubeUrl] = useState('')
   const [rightsConfirmed, setRightsConfirmed] = useState(false)
   const [quality, setQuality] = useState<SeparationQuality>('preserve')
   const [dragging, setDragging] = useState(false)
@@ -534,26 +634,34 @@ function App() {
 
   const chooseFile = (nextFile?: File) => {
     if (!nextFile) return
+    setSourceType('upload')
     setFile(nextFile)
     setError('')
   }
 
   const submit = async () => {
-    if (!file || !rightsConfirmed) return
+    if (!rightsConfirmed || (sourceType === 'upload' ? !file : !youtubeUrl.trim())) return
     setUploading(true)
     setUploadProgress(0)
     setError('')
-    const body = new FormData()
-    body.append('file', file)
-    body.append('rights_confirmed', 'true')
-    body.append('quality', quality)
 
     try {
-      const createdJob = await uploadJob(body, setUploadProgress)
+      let createdJob: Job
+      if (sourceType === 'upload') {
+        if (!file) return
+        const body = new FormData()
+        body.append('file', file)
+        body.append('rights_confirmed', 'true')
+        body.append('attestation_version', rightsAttestationVersion)
+        body.append('quality', quality)
+        createdJob = await uploadJob(body, setUploadProgress)
+      } else {
+        createdJob = await createYoutubeJob(youtubeUrl.trim(), quality)
+      }
       setJob(createdJob)
       setHistory((savedJobs) => upsertJob(savedJobs, createdJob))
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Upload failed.')
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Could not start source ingest.')
     } finally {
       setUploading(false)
     }
@@ -562,7 +670,9 @@ function App() {
   const startOver = () => {
     localStorage.removeItem(currentJobStorageKey)
     setJob(null)
+    setSourceType('upload')
     setFile(null)
+    setYoutubeUrl('')
     setRightsConfirmed(false)
     setQuality('preserve')
     setError('')
@@ -608,8 +718,8 @@ function App() {
           <p className="eyebrow">Make the room your stage</p>
           <h1>Turn your track into<br /><em>karaoke.</em></h1>
           <p>
-            Upload music you’re allowed to adapt. Karaoke Box separates the vocals locally,
-            then gives you a full-quality instrumental to sing over.
+            Upload music or provide a YouTube video you’re allowed to adapt. Karaoke Box
+            separates the vocals locally, then gives you a full-quality instrumental to sing over.
           </p>
         </section>
 
@@ -642,46 +752,91 @@ function App() {
               </div>
             </div>
 
-            <div
-              className={`drop-zone ${dragging ? 'dragging' : ''} ${file ? 'has-file' : ''}`}
-              onDragEnter={(event) => {
-                event.preventDefault()
-                setDragging(true)
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(event) => {
-                event.preventDefault()
-                setDragging(false)
-                chooseFile(event.dataTransfer.files[0])
-              }}
-            >
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
-                onChange={(event) => chooseFile(event.target.files?.[0])}
-              />
-              {file ? (
-                <>
-                  <div className="file-icon" aria-hidden="true">♫</div>
-                  <strong>{file.name}</strong>
-                  <span>{formatBytes(file.size)}</span>
-                  <button className="text-button" type="button" onClick={() => inputRef.current?.click()}>
-                    Choose another
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="upload-icon" aria-hidden="true">↑</div>
-                  <strong>Drop an audio file here</strong>
-                  <span>MP3, WAV, M4A, FLAC, OGG, AAC or Opus · up to 250 MB</span>
-                  <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
-                    Browse files
-                  </button>
-                </>
-              )}
+            <div className="source-tabs" role="tablist" aria-label="Audio source">
+              <button
+                className={sourceType === 'upload' ? 'selected' : ''}
+                type="button"
+                role="tab"
+                aria-selected={sourceType === 'upload'}
+                onClick={() => {
+                  setSourceType('upload')
+                  setError('')
+                }}
+              >
+                Upload a file
+              </button>
+              <button
+                className={sourceType === 'youtube' ? 'selected' : ''}
+                type="button"
+                role="tab"
+                aria-selected={sourceType === 'youtube'}
+                onClick={() => {
+                  setSourceType('youtube')
+                  setError('')
+                }}
+              >
+                YouTube URL
+              </button>
             </div>
+
+            {sourceType === 'upload' ? (
+              <div
+                className={`drop-zone ${dragging ? 'dragging' : ''} ${file ? 'has-file' : ''}`}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  setDragging(true)
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  setDragging(false)
+                  chooseFile(event.dataTransfer.files[0])
+                }}
+              >
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
+                  onChange={(event) => chooseFile(event.target.files?.[0])}
+                />
+                {file ? (
+                  <>
+                    <div className="file-icon" aria-hidden="true">♫</div>
+                    <strong>{file.name}</strong>
+                    <span>{formatBytes(file.size)}</span>
+                    <button className="text-button" type="button" onClick={() => inputRef.current?.click()}>
+                      Choose another
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="upload-icon" aria-hidden="true">↑</div>
+                    <strong>Drop an audio file here</strong>
+                    <span>MP3, WAV, M4A, FLAC, OGG, AAC or Opus · up to 250 MB</span>
+                    <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
+                      Browse files
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="youtube-source">
+                <label htmlFor="youtube-url">
+                  <span>Individual YouTube video URL</span>
+                  <input
+                    id="youtube-url"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://www.youtube.com/watch?v=…"
+                    value={youtubeUrl}
+                    onChange={(event) => setYoutubeUrl(event.target.value)}
+                    disabled={uploading}
+                  />
+                </label>
+                <p>Individual HTTPS videos are supported. Playlist/channel URLs without a specific video are not accepted; queue parameters are ignored when a video ID is present.</p>
+              </div>
+            )}
 
             <fieldset className="quality-picker">
               <legend>
@@ -723,21 +878,23 @@ function App() {
               />
               <span className="checkmark" aria-hidden="true">✓</span>
               <span>
-                <strong>I’m allowed to process this recording</strong>
-                <small>I own it, have permission, or its license permits this use.</small>
+                <strong>I confirm I’m allowed to use this source</strong>
+                <small>{rightsAttestationText}</small>
               </span>
             </label>
 
             <button
               className="primary-button"
               type="button"
-              disabled={!file || !rightsConfirmed || uploading || health?.ready === false}
+              disabled={(sourceType === 'upload' ? !file : !youtubeUrl.trim()) || !rightsConfirmed || uploading || health?.ready === false}
               onClick={submit}
             >
-              {uploading ? `Uploading ${uploadProgress}%` : 'Separate vocals'}
+              {uploading
+                ? sourceType === 'upload' ? `Uploading ${uploadProgress}%` : 'Starting YouTube ingest…'
+                : 'Fetch and separate'}
               <span aria-hidden="true">→</span>
             </button>
-            {uploading && (
+            {uploading && sourceType === 'upload' && (
               <div className="upload-progress" aria-live="polite">
                 <div
                   role="progressbar"
@@ -760,16 +917,16 @@ function App() {
           <section className="failed-card" role="alert">
             <div className="failed-icon" aria-hidden="true">!</div>
             <p className="eyebrow">Processing stopped</p>
-            <h2>We couldn’t separate this track</h2>
+            <h2>{job.source_type === 'youtube' ? 'We couldn’t fetch this YouTube source' : 'We couldn’t separate this track'}</h2>
             <p>{job.error || 'An unknown processing error occurred.'}</p>
-            <button className="secondary-button" type="button" onClick={startOver}>Try another file</button>
+            <button className="secondary-button" type="button" onClick={startOver}>Try another source</button>
           </section>
         )}
 
         {job?.status === 'completed' && (
           <>
             <StemMixer job={job} />
-            <button className="start-over" type="button" onClick={startOver}>Process another track</button>
+            <button className="start-over" type="button" onClick={startOver}>Process another source</button>
           </>
         )}
 
@@ -785,8 +942,8 @@ function App() {
         <section className="privacy-strip">
           <div className="privacy-icon" aria-hidden="true">⌂</div>
           <div>
-            <strong>Your audio stays on this computer</strong>
-            <p>Sources and stems are stored only in Karaoke Box’s local application data.</p>
+            <strong>Your sources and stems stay on this computer</strong>
+            <p>After ingest, sources and stems are stored only in Karaoke Box’s local application data.</p>
           </div>
           <div className="privacy-detail">
             <span>CPU processing</span>

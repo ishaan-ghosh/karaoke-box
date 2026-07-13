@@ -14,11 +14,11 @@ datas = [(str(frontend), "web/dist")]
 binaries = []
 hiddenimports = []
 
-for package in ("demucs", "julius", "sphn", "webview"):
+for package in ("demucs", "julius", "sphn", "webview", "yt_dlp"):
     hiddenimports += collect_submodules(package)
     datas += collect_data_files(package)
 
-for package in ("demucs", "pywebview", "platformdirs"):
+for package in ("demucs", "pywebview", "platformdirs", "yt-dlp"):
     try:
         datas += copy_metadata(package)
     except Exception:

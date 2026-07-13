@@ -40,3 +40,12 @@ def demucs_command() -> list[str]:
     if is_frozen():
         return [sys.executable, "--internal-demucs"]
     return [sys.executable, "-u", "-m", "demucs"]
+
+
+def ytdlp_command() -> list[str]:
+    # Keep YouTube ingest on the same frozen-runtime adapter as Demucs. The
+    # packaged executable dispatches this private command to yt-dlp's Python
+    # entry point instead of trying to execute `KaraokeBox.exe -m yt_dlp`.
+    if is_frozen():
+        return [sys.executable, "--internal-ytdlp"]
+    return [sys.executable, "-u", "-m", "yt_dlp"]

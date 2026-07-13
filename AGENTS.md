@@ -33,7 +33,7 @@ Do not introduce CUDA. The processor passes `--device cpu`, desktop startup clea
 Vite 127.0.0.1:5173 -- /api proxy --> FastAPI 127.0.0.1:8000
                                                |
                                                +--> job.json + media under data/jobs
-                                               +--> Demucs subprocess
+                                               +--> yt-dlp / Demucs subprocess
 ```
 
 ### Desktop mode
@@ -45,7 +45,7 @@ random 127.0.0.1 port + per-launch HttpOnly session cookie
       |
 FastAPI serves web/dist and /api
       |
-JSON job store + Demucs child process + bundled FFmpeg tools
+JSON job store + yt-dlp/Demucs child process + bundled FFmpeg tools
 ```
 
 Desktop data is resolved with `platformdirs`:
@@ -57,6 +57,7 @@ Desktop data is resolved with `platformdirs`:
   jobs\<job-id>\instrumental.wav
   jobs\<job-id>\vocals.wav
   jobs\<job-id>\demucs.log
+  jobs\<job-id>\yt-dlp.log       # YouTube jobs only
   models\
   logs\desktop.log
 ```
@@ -66,6 +67,8 @@ On macOS desktop-development mode, the equivalent platform application-data dire
 ## Implemented user features
 
 - MP3/WAV/M4A/FLAC/OGG/AAC/Opus upload
+- Individual HTTPS YouTube video ingest through pinned `yt-dlp`
+- Source-neutral, versioned rights attestation for uploads and URL ingest
 - 250 MB and 20-minute defaults
 - Three profiles:
   - `preserve`: `htdemucs`, original minus predicted vocals; default
@@ -73,6 +76,7 @@ On macOS desktop-development mode, the equivalent platform application-data dire
   - `standard`: `htdemucs`, summed instrument stems
 - CPU-only processing
 - Exact browser upload percentage via XHR
+- Live YouTube ingest progress, audio-format fallback, and sanitized `yt-dlp` diagnostics
 - Live Demucs progress parsed from tqdm output
 - Multi-pass aggregate progress and estimated time remaining
 - Synchronized vocal/instrumental preview and level controls
@@ -107,12 +111,12 @@ Do not expose the desktop API on `0.0.0.0`, use a fixed unauthenticated port, or
 
 ### Frozen Demucs execution
 
-A PyInstaller executable cannot run `sys.executable -m demucs`, because `sys.executable` points back to `KaraokeBox.exe`. `backend/app/runtime.py` therefore returns:
+A PyInstaller executable cannot run `sys.executable -m demucs` or `sys.executable -m yt_dlp`, because `sys.executable` points back to `KaraokeBox.exe`. `backend/app/runtime.py` therefore returns:
 
-- development: `python -u -m demucs`
-- frozen build: `KaraokeBox.exe --internal-demucs`
+- development: `python -u -m demucs` and `python -u -m yt_dlp`
+- frozen build: `KaraokeBox.exe --internal-demucs` and `KaraokeBox.exe --internal-ytdlp`
 
-`backend/desktop_entry.py` dispatches that private command through `app.desktop`. Preserve this adapter when changing process startup.
+`backend/desktop_entry.py` dispatches those private commands through `app.desktop`. Preserve these adapters when changing process startup.
 
 ### Windowed logging
 
@@ -130,6 +134,8 @@ There is deliberately no 24/48-hour cleanup. Only temporary Demucs working outpu
 - `backend/app/main.py` — FastAPI routes, session middleware, static frontend mount
 - `backend/app/jobs.py` — JSON job model/store and single-worker manager
 - `backend/app/processor.py` — ffprobe, Demucs invocation, progress/ETA, output finalization
+- `backend/app/youtube.py` — YouTube URL validation, metadata preflight, controlled `yt-dlp` ingest
+- `backend/app/rights.py` — shared source attestation text/version
 - `backend/app/profiles.py` — model/method/profile definitions
 - `backend/app/runtime.py` — frozen resources, bundled tools, Demucs command adapter
 - `backend/app/desktop.py` — desktop environment, API lifecycle, pywebview, smoke test
@@ -195,7 +201,7 @@ The artifact contains both the portable onedir app and installer. The executable
 
 At the baseline above:
 
-- 11 backend tests pass.
+- 27 backend tests pass.
 - Frontend lint and production build pass.
 - Desktop development smoke test passes.
 - Packaged Windows smoke test passes.

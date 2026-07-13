@@ -28,11 +28,36 @@ def _desktop_log(message: str) -> None:
         pass
 
 
+def _ensure_internal_stdio() -> None:
+    # Windowed PyInstaller starts with None stdout/stderr. The parent worker
+    # captures these streams when it re-enters the executable for a child job.
+    for stream_name, file_descriptor in (("stdout", 1), ("stderr", 2)):
+        if getattr(sys, stream_name) is not None:
+            continue
+        try:
+            stream = os.fdopen(file_descriptor, "w", buffering=1, closefd=False)
+        except OSError:
+            stream = open(os.devnull, "w", encoding="utf-8")
+        setattr(sys, stream_name, stream)
+
+
 def _run_internal_demucs(arguments: list[str]) -> int:
+    _ensure_internal_stdio()
     from demucs.separate import main as demucs_main
 
     demucs_main(arguments)
     return 0
+
+
+def _run_internal_ytdlp(arguments: list[str]) -> int:
+    _ensure_internal_stdio()
+    from yt_dlp import main as ytdlp_main
+
+    try:
+        result = ytdlp_main(arguments)
+    except SystemExit as exc:
+        return int(exc.code or 0) if isinstance(exc.code, int) else 1
+    return int(result or 0)
 
 
 def _configure_desktop_environment() -> Path:
@@ -172,6 +197,8 @@ def main(arguments: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if arguments is None else arguments)
     if arguments and arguments[0] == "--internal-demucs":
         return _run_internal_demucs(arguments[1:])
+    if arguments and arguments[0] == "--internal-ytdlp":
+        return _run_internal_ytdlp(arguments[1:])
 
     parser = argparse.ArgumentParser(description="Karaoke Box desktop application")
     parser.add_argument(

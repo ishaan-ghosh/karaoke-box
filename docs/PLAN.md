@@ -19,9 +19,9 @@ The product must not promise that vocal removal, re-recording, pitch changes, or
 The product supports two ways to provide a source recording:
 
 - Upload an MP3, WAV, M4A, FLAC, OGG, AAC, or Opus file.
-- Paste the URL of an individual YouTube video. The local API uses `yt-dlp` to fetch the best available audio-only source into the job directory; it does not force an additional MP3 transcode before validation.
+- Paste the URL of an individual YouTube video. The local API uses `yt-dlp` to fetch the best available audio source, preferring audio-only formats and falling back to an audio-containing format when necessary; it does not force an additional MP3 transcode before validation.
 
-Both paths create a local source asset and then enter the same validation and separation pipeline. URL ingest is limited to individual YouTube videos; playlists, channels, live streams, arbitrary web URLs, cookies, and access-control bypasses are out of scope.
+Both paths create a local source asset and then enter the same validation and separation pipeline. URL ingest is limited to individual YouTube videos; playlist/channel URLs without an explicit video, live streams, arbitrary web URLs, cookies, and access-control bypasses are out of scope. Queue parameters are ignored when a URL explicitly identifies one video.
 
 A video being publicly reachable on YouTube does not mean that the user may download, adapt, or export it. `yt-dlp` is only a transfer mechanism: using it grants no license, transfers no rights, and does not make the source or resulting stems copyright-free.
 
@@ -52,7 +52,7 @@ Do not label outputs “copyright-free” unless their rights actually establish
 2. **Confirm rights**
    - Make the source-neutral attestation before the application stores an upload or fetches a URL.
 3. **Ingest and validate**
-   - Stream an uploaded file into the job directory, or use `yt-dlp` to fetch the YouTube video's best available audio-only source.
+   - Stream an uploaded file into the job directory, or use `yt-dlp` to fetch the YouTube video's best available audio source, preferring audio-only formats.
    - Validate either source with `ffprobe`, then normalize it with FFmpeg.
 4. **Separate audio**
    - Run source separation to produce vocal and instrumental stems.
@@ -80,7 +80,7 @@ Do not label outputs “copyright-free” unless their rights actually establish
 ### Local API and processing
 
 - **FastAPI** accepts multipart file uploads and YouTube URL submissions, and exposes job status/assets.
-- **yt-dlp** fetches a submitted YouTube video's best available audio-only source into controlled job storage.
+- **yt-dlp** fetches a submitted YouTube video's best available audio source, preferring audio-only formats, into controlled job storage.
 - **FFmpeg/ffprobe** validates either kind of source and reads its duration.
 - **Demucs** performs two-stem separation with `--device cpu`.
 - A single-thread executor serializes source ingest and expensive CPU jobs.
@@ -159,14 +159,14 @@ Both creation routes require `rights_confirmed=true`, a separation profile, and 
 
 The file route enforces the extension and streaming byte limit before queueing the existing validation/separation work. Desktop mode may use the native file picker and copy the selected source into the application job directory while retaining the same job semantics.
 
-The YouTube route accepts JSON containing one HTTPS video URL. It creates a job before the fetch so the client can poll an `ingesting` state; the worker then resolves metadata and downloads audio with `yt-dlp`. The route must reject non-YouTube hosts, playlists/channels, unsupported video types, and any client-supplied `yt-dlp` arguments. The browser sends only the URL—the local API performs the fetch directly into job scratch storage.
+The YouTube route accepts JSON containing one HTTPS video URL. It creates a job before the fetch so the client can poll an `ingesting` state; the worker then resolves metadata and downloads audio with `yt-dlp`. The route must reject non-YouTube hosts, playlist/channel URLs without an explicit video, unsupported video types, and any client-supplied `yt-dlp` arguments. When a watch URL contains `v=` plus queue context such as `list=RD...`, the server canonicalizes it to that one video and still passes `--no-playlist`. The browser sends only the URL—the local API performs the fetch directly into job scratch storage.
 
 ## 7. Processing pipeline
 
 1. Require and persist the source-neutral rights attestation before accepting source bytes or starting a network fetch.
 2. Ingest one source:
    - **File:** enforce the upload extension allowlist and 250 MB streaming limit while writing to the job directory.
-   - **YouTube:** validate an individual video URL, use `yt-dlp` to resolve the canonical video ID/uploader metadata, and fetch the best available audio-only source into controlled scratch storage. Apply metadata preflight checks when available and abort a download that exceeds the byte limit.
+   - **YouTube:** validate an individual video URL, use `yt-dlp` to resolve the canonical video ID/uploader metadata, and fetch the best available audio source—preferring audio-only formats—into controlled scratch storage. Apply metadata preflight checks when available and abort a download that exceeds the byte limit.
 3. Validate the resulting local media with `ffprobe`; require an audio stream and a measured duration no longer than 20 minutes. `yt-dlp` metadata is provenance and preflight data, not a substitute for this validation.
 4. Feed the validated source through the same FFmpeg/Demucs path regardless of origin. Run the selected CPU profile: subtractive `htdemucs`, subtractive fine-tuned `htdemucs_ft`, or summed-stem `htdemucs`.
 5. Move full-quality `vocals.wav` and the selected accompaniment result into stable job assets.
@@ -179,7 +179,7 @@ Separation quality will vary. Backing vocals, reverb, and centered instruments m
 
 - Bind the desktop API only to a random loopback port and require a per-launch session token.
 - Validate selected files and YouTube URLs in the backend; pass fixed argument arrays to subprocesses and never construct shell commands from user strings.
-- Allow only `yt-dlp`'s YouTube video extractor and a server-owned output template. Do not accept arbitrary URLs, client options, browser cookies, credentials, playlists, or access-control/DRM bypasses.
+- Allow only `yt-dlp`'s YouTube video extractor and a server-owned output template. Do not accept arbitrary URLs, client options, browser cookies, credentials, playlist-only URLs, or access-control/DRM bypasses.
 - Enforce file-size, duration, download timeout, disk-space, and single-worker concurrency limits for both uploaded and fetched sources.
 - Resolve application data with `platformdirs`; do not write beside the installed executable.
 - Isolate the `yt-dlp` and Demucs child processes, cap runtime/resources where practical, sanitize diagnostics, and clean scratch files after every job.
@@ -205,14 +205,16 @@ Separation quality will vary. Backing vocals, reverb, and centered instruments m
 
 **File-ingest checkpoint:** an attested audio-file source becomes playable vocal/instrumental stems.
 
-### Phase 1B — attested YouTube URL ingest (planned)
+### Phase 1B — attested YouTube URL ingest (implemented)
 
 - Replace file-specific confirmation copy with the source-neutral, versioned attestation used by both source paths.
 - Add a YouTube source choice and `POST /api/jobs/youtube` URL submission with an `ingesting` progress state.
-- Invoke pinned `yt-dlp` with fixed options to resolve metadata and fetch the best available audio-only source into the job directory.
+- Invoke pinned `yt-dlp` with fixed options to resolve metadata and fetch the best available audio source, preferring audio-only formats, into the job directory.
 - Persist the canonical URL, video ID, title, uploader/channel metadata, fetch timestamp, and attestation for the rights manifest.
 - Apply download byte/time limits, run authoritative `ffprobe` validation, and hand the result to the existing CPU separation pipeline.
 - Add mocked API/worker tests and packaged-runtime checks; do not make CI depend on a live third-party YouTube video.
+
+**YouTube-ingest checkpoint:** an attested individual YouTube video URL becomes a bounded, provenance-recorded local source and enters the existing validated CPU separation pipeline. Live third-party media is not part of routine CI.
 
 **Source-ingest MVP checkpoint:** a user-attested file upload or YouTube video URL becomes playable vocal/instrumental stems through the same validated separation pipeline.
 
@@ -269,6 +271,6 @@ Separation quality will vary. Backing vocals, reverb, and centered instruments m
 
 ## 12. Current implementation checkpoint
 
-The file-upload vertical slice is implemented: attested upload with byte progress, FFprobe validation, selectable subtractive/fine-tuned/summed-stem CPU Demucs separation with live pass progress and ETA, reload-safe polling and active-job restoration, local result history, synchronized stem playback, level controls, explicit cleanup, and instrumental WAV download. The desktop runtime and Windows packaging pipeline are also implemented.
+The file-upload and YouTube source vertical slices are implemented: both require the shared versioned attestation; YouTube jobs validate an individual HTTPS URL, resolve bounded provenance, preflight duration/size, fetch audio-only media with fixed pinned `yt-dlp` options, retain sanitized diagnostics, and hand the source to the existing FFprobe/CPU Demucs pipeline. Both paths include byte/status progress, reload-safe polling and active-job restoration, local result history, synchronized stem playback, level controls, explicit cleanup, and instrumental WAV download. The desktop runtime and Windows packaging adapters include the `yt-dlp` worker entry point.
 
-The YouTube source path is specified but not yet implemented. Its next checkpoint is the source-neutral attestation, URL API, controlled `yt-dlp` fetch, provenance persistence, FFprobe handoff, frontend source selector, tests, and Windows packaging support described in Phase 1B. In parallel, test several permitted sources end to end and record runtime/memory on the target Windows hardware.
+The next checkpoint is to test several permitted sources end to end and record runtime/memory on the target Windows hardware. Routine CI remains mocked and must not depend on a live third-party YouTube video.

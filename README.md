@@ -1,10 +1,10 @@
 # Karaoke Box
 
-A local karaoke-stem studio for source recordings you own or are allowed to use. Choose an audio-file upload or, in the planned URL-ingest flow, paste an individual YouTube video URL; Karaoke Box validates the local source, separates it into instrumental and vocal stems with Demucs on CPU, and lets you preview the mix and download the instrumental as WAV.
+A local karaoke-stem studio for source recordings you own or are allowed to use. Choose an audio-file upload or paste an individual YouTube video URL; Karaoke Box validates the local source, separates it into instrumental and vocal stems with Demucs on CPU, and lets you preview the mix and download the instrumental as WAV.
 
 Removing vocals does **not** remove copyright or guarantee that a platform will accept an upload without a claim. Fetching media with `yt-dlp` is only a technical ingest step: it grants no license or other rights to download, adapt, or export that media.
 
-> **Implementation status:** File upload is available now. YouTube URL entry and `yt-dlp` ingest are specified in `docs/PLAN.md` as the next source-ingest milestone and are not yet wired into the UI or API.
+> **Rights note:** YouTube availability and successful `yt-dlp` ingest do not establish authorization to download, adapt, or export a recording.
 
 ## Current scope
 
@@ -15,8 +15,9 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 - Natural, fine-tuned, and strong-removal separation profiles
 - Local filesystem storage under `data/`
 - MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads
+- Individual HTTPS YouTube video URL ingest through pinned `yt-dlp`
 - 250 MB and 20-minute defaults
-- Live upload percentage, Demucs model progress, and estimated time remaining
+- Live upload/YouTube ingest progress, Demucs model progress, and estimated time remaining
 - Reload-safe active-job restoration and local recent-results history
 - Synchronized instrumental/vocal preview
 - Instrumental WAV export
@@ -25,11 +26,15 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 
 ## Source inputs and rights
 
-The implemented source path accepts MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads. The planned second path accepts an individual YouTube video URL, has the local API fetch the best available audio-only source with `yt-dlp`, validates the fetched file with `ffprobe`, and then uses the same CPU separation pipeline as an upload.
+The source path accepts MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads. The YouTube path accepts one individual HTTPS video URL, fetches the best available audio source with pinned `yt-dlp` (preferring audio-only formats), validates the fetched file with `ffprobe`, and then uses the same CPU separation pipeline as an upload. Playlist/channel URLs without a specific video, live streams, arbitrary hosts, cookies, and client-supplied `yt-dlp` options are rejected. If a watch URL contains both `v=` and queue parameters such as `list=RD...`, Karaoke Box processes only the explicit video.
 
-Both paths require a source-neutral attestation confirming that the user owns or is authorized to use the recording, including downloading it when a URL is provided, and may process and export it. Public availability on YouTube and successful `yt-dlp` ingest do not establish that authorization.
+Both paths require this source-neutral attestation before bytes are stored or a URL fetch begins:
 
-The planned `rights-manifest.json` records the attestation and source provenance. For YouTube sources, that includes the canonical URL, video ID, title, uploader/channel name and ID when available, and fetch timestamp; those metadata identify the source but are not proof of rights.
+> I confirm that I own this source recording or am authorized to use it, including downloading it when I provide a URL, and that I am permitted to process and export it.
+
+The server stores the attestation version, text, and confirmation timestamp. This records the user’s representation; it does not grant rights or replace a license.
+
+The job metadata records YouTube provenance for the future `rights-manifest.json`: canonical URL, video ID, title, uploader/channel name and ID when available, extractor, and fetch timestamp. Those metadata identify the source but are not proof of rights.
 
 ## Prerequisites
 
@@ -105,11 +110,12 @@ data/jobs/<job-id>/
   job.json
   source.<extension>
   demucs.log
+  yt-dlp.log        # YouTube jobs only
   instrumental.wav
   vocals.wav
 ```
 
-Using **Process another track** keeps the completed result in **Recent tracks**. Results can be reopened, downloaded, or explicitly deleted there. You can delete all browser-development audio manually by stopping the API and removing `data/`.
+Using **Process another source** keeps the completed result in **Recent tracks**. Results can be reopened, downloaded, or explicitly deleted there. You can delete all browser-development audio manually by stopping the API and removing `data/`.
 
 The desktop app stores the equivalent structure under `%LOCALAPPDATA%\Karaoke Box` on Windows (and the platform application-data directory during macOS development). Desktop files do not expire automatically; they remain until explicitly deleted.
 
@@ -131,6 +137,9 @@ Environment variables for the API:
 | `KARAOKE_DEMUCS_MODEL` | `htdemucs` | Model for Natural and Strong Removal profiles |
 | `KARAOKE_DEMUCS_BEST_MODEL` | `htdemucs_ft` | Model for the Best Quality profile |
 | `KARAOKE_CORS_ORIGINS` | local Vite origins | Comma-separated allowed frontend origins |
+| `KARAOKE_YOUTUBE_METADATA_TIMEOUT_SECONDS` | `60` | Metadata lookup timeout |
+| `KARAOKE_YOUTUBE_DOWNLOAD_TIMEOUT_SECONDS` | `900` | YouTube audio download timeout |
+| `KARAOKE_YOUTUBE_SOCKET_TIMEOUT_SECONDS` | `30` | yt-dlp network socket timeout |
 
 The Vite build accepts `VITE_API_BASE_URL`. Leave it empty for the local proxy and desktop app; set it only when a separately hosted API is used. See `web/.env.example`.
 
@@ -146,7 +155,7 @@ KARAOKE_DEMUCS_MODEL=htdemucs npm run api
 
 Run `npm run api` and confirm <http://127.0.0.1:8000/api/health> responds.
 
-### Missing Demucs
+### Missing Demucs or yt-dlp
 
 Run `npm run setup`, then start the API through `npm run api` so it uses `backend/.venv` rather than a global Python installation.
 
@@ -162,7 +171,7 @@ Try **Natural backing** first. It subtracts the predicted vocal from the origina
 
 Try **Best quality** when Natural backing is still poor. It uses the slower `htdemucs_ft` model. **Strong removal** is the original summed-stems method; it may suppress more vocal residue but can sound more processed.
 
-Use the least-compressed source you are authorized to process. For file uploads, prefer WAV or FLAC over audio that has already been repeatedly encoded. The planned YouTube flow fetches the best available audio-only source, but that source may already be lossily encoded. No separation model can fully restore instruments that occupy the same time/frequency space as the vocal.
+Use the least-compressed source you are authorized to process. For file uploads, prefer WAV or FLAC over audio that has already been repeatedly encoded. The YouTube path fetches the best available audio source, preferring audio-only formats; the fallback may already be lossily encoded. No separation model can fully restore instruments that occupy the same time/frequency space as the vocal.
 
 ### Processing fails
 

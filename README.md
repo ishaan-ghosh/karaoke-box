@@ -1,8 +1,10 @@
 # Karaoke Box
 
-A local karaoke-stem studio for audio you own or are allowed to adapt. Upload a music file in the browser, separate it into instrumental and vocal stems with Demucs on CPU, preview the mix, and download the instrumental as WAV.
+A local karaoke-stem studio for source recordings you own or are allowed to use. Choose an audio-file upload or, in the planned URL-ingest flow, paste an individual YouTube video URL; Karaoke Box validates the local source, separates it into instrumental and vocal stems with Demucs on CPU, and lets you preview the mix and download the instrumental as WAV.
 
-Removing vocals does **not** remove the underlying composition's copyright or guarantee that a platform will accept an upload without a claim.
+Removing vocals does **not** remove copyright or guarantee that a platform will accept an upload without a claim. Fetching media with `yt-dlp` is only a technical ingest step: it grants no license or other rights to download, adapt, or export that media.
+
+> **Implementation status:** File upload is available now. YouTube URL entry and `yt-dlp` ingest are specified in `docs/PLAN.md` as the next source-ingest milestone and are not yet wired into the UI or API.
 
 ## Current scope
 
@@ -21,7 +23,13 @@ Removing vocals does **not** remove the underlying composition's copyright or gu
 - pywebview desktop runtime and Windows x64 packaging pipeline
 - CPU-only PyTorch/Demucs packaging; no CUDA build
 
-There is no YouTube integration, cloud upload, account, database, or telemetry.
+## Source inputs and rights
+
+The implemented source path accepts MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads. The planned second path accepts an individual YouTube video URL, has the local API fetch the best available audio-only source with `yt-dlp`, validates the fetched file with `ffprobe`, and then uses the same CPU separation pipeline as an upload.
+
+Both paths require a source-neutral attestation confirming that the user owns or is authorized to use the recording, including downloading it when a URL is provided, and may process and export it. Public availability on YouTube and successful `yt-dlp` ingest do not establish that authorization.
+
+The planned `rights-manifest.json` records the attestation and source provenance. For YouTube sources, that includes the canonical URL, video ID, title, uploader/channel name and ID when available, and fetch timestamp; those metadata identify the source but are not proof of rights.
 
 ## Prerequisites
 
@@ -62,7 +70,7 @@ npm run web
 
 Then open <http://127.0.0.1:5173>.
 
-The first separation downloads the configured Demucs model weights. After that model download, uploaded audio and generated stems remain on this computer. Keep the API terminal open until a job completes. Closing or reloading the browser does not stop a job; closing the API does.
+The first separation downloads the configured Demucs model weights. After that model download, ingested source audio and generated stems remain on this computer. Keep the API terminal open until a job completes. Closing or reloading the browser does not stop a job; closing the API does.
 
 ### Desktop development mode
 
@@ -154,7 +162,7 @@ Try **Natural backing** first. It subtracts the predicted vocal from the origina
 
 Try **Best quality** when Natural backing is still poor. It uses the slower `htdemucs_ft` model. **Strong removal** is the original summed-stems method; it may suppress more vocal residue but can sound more processed.
 
-Use the least-compressed authorized source available—prefer WAV or FLAC over an audio file that has already been repeatedly encoded. No separation model can fully restore instruments that occupy the same time/frequency space as the vocal.
+Use the least-compressed source you are authorized to process. For file uploads, prefer WAV or FLAC over audio that has already been repeatedly encoded. The planned YouTube flow fetches the best available audio-only source, but that source may already be lossily encoded. No separation model can fully restore instruments that occupy the same time/frequency space as the vocal.
 
 ### Processing fails
 

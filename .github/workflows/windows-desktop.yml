@@ -70,8 +70,26 @@ jobs:
       - name: Smoke-test packaged service
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath dist/KaraokeBox/KaraokeBox.exe -ArgumentList "--smoke-test" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Packaged smoke test failed: $($process.ExitCode)" }
+          $env:KARAOKE_DESKTOP_LOG = "$env:GITHUB_WORKSPACE\desktop-smoke.log"
+          $process = Start-Process -FilePath dist/KaraokeBox/KaraokeBox.exe -ArgumentList "--smoke-test" -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            Stop-Process -Id $process.Id -Force
+            if (Test-Path $env:KARAOKE_DESKTOP_LOG) { Get-Content $env:KARAOKE_DESKTOP_LOG }
+            throw "Packaged smoke test timed out after 60 seconds"
+          }
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $env:KARAOKE_DESKTOP_LOG) { Get-Content $env:KARAOKE_DESKTOP_LOG }
+            throw "Packaged smoke test failed: $($process.ExitCode)"
+          }
+          Get-Content $env:KARAOKE_DESKTOP_LOG
+
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KaraokeBox-smoke-diagnostics
+          path: desktop-smoke.log
+          if-no-files-found: warn
 
       - name: Build installer
         shell: pwsh

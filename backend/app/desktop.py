@@ -6,11 +6,26 @@ import os
 import secrets
 import socket
 import sys
+import tempfile
 import threading
 import time
+import traceback
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
+
+
+def _desktop_log(message: str) -> None:
+    configured = os.environ.get("KARAOKE_DESKTOP_LOG")
+    path = Path(configured) if configured else Path(tempfile.gettempdir()) / "karaoke-box-desktop.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as log:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            log.write(f"{timestamp} {message}\n")
+    except OSError:
+        pass
 
 
 def _run_internal_demucs(arguments: list[str]) -> int:
@@ -29,6 +44,7 @@ def _configure_desktop_environment() -> Path:
     model_root.mkdir(parents=True, exist_ok=True)
 
     os.environ.setdefault("KARAOKE_DATA_DIR", str(data_root))
+    os.environ.setdefault("KARAOKE_DESKTOP_LOG", str(data_root / "logs" / "desktop.log"))
     os.environ.setdefault("TORCH_HOME", str(model_root / "torch"))
     os.environ.setdefault("HF_HOME", str(model_root / "huggingface"))
     os.environ.setdefault("KARAOKE_SESSION_TOKEN", secrets.token_urlsafe(32))
@@ -93,8 +109,10 @@ def _smoke_test(base_url: str, token: str) -> int:
 
 
 def _run_desktop(smoke_test: bool) -> int:
-    _configure_desktop_environment()
+    data_root = _configure_desktop_environment()
+    _desktop_log(f"desktop start; smoke_test={smoke_test}; data_root={data_root}")
 
+    _desktop_log("importing application")
     from .main import ACTIVE_STATUSES, job_manager, job_store
     from .runtime import web_dist_dir
 
@@ -106,12 +124,17 @@ def _run_desktop(smoke_test: bool) -> int:
     port = _available_port()
     base_url = f"http://127.0.0.1:{port}"
     token = os.environ["KARAOKE_SESSION_TOKEN"]
+    _desktop_log(f"starting API at {base_url}")
     server = _ApiServer(port)
     server.start()
     try:
         _wait_until_ready(base_url)
+        _desktop_log("API ready")
         if smoke_test:
-            return _smoke_test(base_url, token)
+            _desktop_log("starting authenticated smoke request")
+            result = _smoke_test(base_url, token)
+            _desktop_log("smoke request complete")
+            return result
 
         import webview
 
@@ -137,8 +160,11 @@ def _run_desktop(smoke_test: bool) -> int:
         webview.start(debug=os.environ.get("KARAOKE_DESKTOP_DEBUG") == "1")
         return 0
     finally:
+        _desktop_log("shutting down job manager")
         job_manager.shutdown()
+        _desktop_log("stopping API")
         server.stop()
+        _desktop_log("desktop shutdown complete")
 
 
 def main(arguments: list[str] | None = None) -> int:
@@ -156,5 +182,13 @@ def main(arguments: list[str] | None = None) -> int:
     return _run_desktop(options.smoke_test)
 
 
+def safe_main(arguments: list[str] | None = None) -> int:
+    try:
+        return main(arguments)
+    except BaseException:
+        _desktop_log(f"fatal desktop error\n{traceback.format_exc()}")
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(safe_main())

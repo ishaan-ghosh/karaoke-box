@@ -1,7 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Variants } from 'motion/react'
-import { CheckIcon, NoteIcon, ShieldIcon, UploadIcon, WaveMark } from './components/icons'
+import {
+  AlertIcon,
+  CheckIcon,
+  DownloadIcon,
+  NoteIcon,
+  PauseIcon,
+  PlayIcon,
+  ShieldIcon,
+  UploadIcon,
+  WaveMark,
+} from './components/icons'
+import { Eq } from './components/Eq'
 import './App.css'
 
 const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1]
@@ -250,15 +261,30 @@ async function createYoutubeJob(
   return normalizeJob(await response.json())
 }
 
-function WaveIcon() {
+/* Presentational number roll: whenever `value` changes the old digits
+   roll up and out while the new ones roll in (spec §2.5 "percentage
+   readouts tick"). AnimatePresence keyed per value; popLayout keeps the
+   exiting copy out of flow so the readout never jumps width. */
+function TickNumber({ value, reduce }: { value: number; reduce: boolean | null }) {
   return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M3 17h3l2-8 4 16 4-22 4 26 4-17 2 5h3" />
-    </svg>
+    <span className="tick-number">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={value}
+          className="tick-number__val"
+          initial={reduce ? { opacity: 0 } : { opacity: 0, y: '60%' }}
+          animate={reduce ? { opacity: 1 } : { opacity: 1, y: '0%' }}
+          exit={reduce ? { opacity: 0 } : { opacity: 0, y: '-60%' }}
+          transition={reduce ? { duration: 0.12 } : { type: 'spring', stiffness: 360, damping: 26 }}
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
   )
 }
 
-function StemMixer({ job }: { job: Job }) {
+function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
   const instrumentalRef = useRef<HTMLAudioElement>(null)
   const vocalsRef = useRef<HTMLAudioElement>(null)
   const frameRef = useRef<number | null>(null)
@@ -378,24 +404,42 @@ function StemMixer({ job }: { job: Job }) {
     setCurrentTime(value)
   }
 
+  // Presentational fill % for the custom range gradients (derived, no new state).
+  const seekPercent = duration ? (Math.min(currentTime, duration) / duration) * 100 : 0
+
   return (
     <section className="result-card" aria-labelledby="result-heading">
-      <div className="result-heading">
-        <div className="success-icon" aria-hidden="true">✓</div>
+      <motion.div
+        className="result-heading"
+        initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+        animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+        transition={reduce ? { duration: 0.2 } : { type: 'spring', stiffness: 320, damping: 22, delay: 0.1 }}
+      >
+        <div className="result-well" aria-hidden="true"><CheckIcon size={22} /></div>
         <div>
-          <p className="eyebrow success">{jobEngineLabel(job)} · CPU · Separation complete</p>
+          <p className="eyebrow eyebrow--gold">Separation complete</p>
           <h2 id="result-heading">Your karaoke mix</h2>
+          <p className="result-meta">{jobEngineLabel(job)} · CPU</p>
         </div>
-      </div>
+      </motion.div>
 
       <div className="transport">
-        <button className="play-button" type="button" onClick={togglePlayback}>
-          <span aria-hidden="true">{playing ? 'Ⅱ' : '▶'}</span>
+        <button
+          className="play-button"
+          type="button"
+          data-state={playing ? 'pause' : 'play'}
+          onClick={togglePlayback}
+        >
+          {playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
           <span className="sr-only">{playing ? 'Pause' : 'Play'} stem mix</span>
         </button>
-        <span className="time">{formatTime(currentTime)}</span>
+        <span className="transport-time">
+          {formatTime(currentTime)}
+          {playing && <Eq size="sm" />}
+        </span>
         <input
-          className="timeline"
+          className="transport-range"
+          style={{ '--seek': `${seekPercent}%` } as CSSProperties}
           aria-label="Playback position"
           type="range"
           min="0"
@@ -404,7 +448,7 @@ function StemMixer({ job }: { job: Job }) {
           value={Math.min(currentTime, duration || 1)}
           onChange={(event) => seek(Number(event.target.value))}
         />
-        <span className="time">{formatTime(duration)}</span>
+        <span className="transport-time">{formatTime(duration)}</span>
       </div>
 
       {playbackError && <p className="inline-error">{playbackError}</p>}
@@ -413,10 +457,12 @@ function StemMixer({ job }: { job: Job }) {
         <label className="stem-control">
           <span>
             <strong>Instrumental</strong>
-            <small>Main karaoke backing</small>
+            <small>the karaoke bed</small>
           </span>
-          <output>{Math.round(instrumentalVolume * 100)}%</output>
+          <output><TickNumber value={Math.round(instrumentalVolume * 100)} reduce={reduce} />%</output>
           <input
+            className="stem-range stem-range--gold"
+            style={{ '--seek': `${instrumentalVolume * 100}%` } as CSSProperties}
             aria-label="Instrumental volume"
             type="range"
             min="0"
@@ -429,10 +475,12 @@ function StemMixer({ job }: { job: Job }) {
         <label className="stem-control">
           <span>
             <strong>Original vocals</strong>
-            <small>Raise to compare stems</small>
+            <small>blend back for guidance</small>
           </span>
-          <output>{Math.round(vocalVolume * 100)}%</output>
+          <output><TickNumber value={Math.round(vocalVolume * 100)} reduce={reduce} />%</output>
           <input
+            className="stem-range"
+            style={{ '--seek': `${vocalVolume * 100}%` } as CSSProperties}
             aria-label="Original vocal volume"
             type="range"
             min="0"
@@ -462,14 +510,14 @@ function StemMixer({ job }: { job: Job }) {
       <audio ref={vocalsRef} src={vocalsUrl} preload="auto" />
 
       <a className="primary-button download" href={`${instrumentalUrl}?download=true`}>
-        <span aria-hidden="true">↓</span>
+        <DownloadIcon size={18} />
         Download instrumental WAV
       </a>
     </section>
   )
 }
 
-function ProgressCard({ job }: { job: Job }) {
+function ProgressCard({ job, reduce }: { job: Job; reduce: boolean | null }) {
   const melbandSelected = job.separator_engine === 'melband_roformer'
   const stages: Array<{ status: JobStatus; label: string }> = job.source_type === 'youtube'
     ? [
@@ -513,8 +561,9 @@ function ProgressCard({ job }: { job: Job }) {
 
   return (
     <section className="progress-card" aria-live="polite">
-      <div className="processing-orbit" aria-hidden="true">
-        <WaveIcon />
+      <p className="on-air" aria-hidden="true">On air</p>
+      <div className="on-air-well" aria-hidden="true">
+        <Eq size="lg" />
       </div>
       <p className="eyebrow">{jobEngineLabel(job)} · CPU</p>
       <h2>{job.message}</h2>
@@ -522,9 +571,9 @@ function ProgressCard({ job }: { job: Job }) {
         {jobDisplayName(job)} · {job.size_bytes > 0 ? formatBytes(job.size_bytes) : 'YouTube source'}
       </p>
       <div className="progress-readout">
-        <strong>{job.progress}%</strong>
-        <span>{passLabel}</span>
-        <small>{progressDetail}</small>
+        <span className="readout-pct"><TickNumber value={job.progress} reduce={reduce} />%</span>
+        <span className="readout-pass">{passLabel}</span>
+        <span className="readout-eta">{progressDetail}</span>
       </div>
       <div
         className="progress-track"
@@ -542,8 +591,10 @@ function ProgressCard({ job }: { job: Job }) {
           const active = index === currentIndex
           return (
             <li key={stage.status} className={done ? 'done' : active ? 'active' : ''}>
-              <span>{done ? '✓' : index + 1}</span>
-              {stage.label}
+              <span className="stage-dot" aria-hidden="true">
+                {done ? <CheckIcon size={11} /> : active ? <i /> : index + 1}
+              </span>
+              <span className="stage-label">{stage.label}</span>
             </li>
           )
         })}
@@ -556,11 +607,13 @@ function ProgressCard({ job }: { job: Job }) {
 function JobHistory({
   jobs,
   currentJobId,
+  reduce,
   onOpen,
   onDelete,
 }: {
   jobs: Job[]
   currentJobId?: string
+  reduce: boolean | null
   onOpen: (job: Job) => void
   onDelete: (job: Job) => void
 }) {
@@ -573,40 +626,56 @@ function JobHistory({
           <p className="eyebrow">Stored locally</p>
           <h2 id="history-heading">Recent tracks</h2>
         </div>
-        <span>{jobs.length} saved</span>
+        <span className="history-count">{jobs.length} saved</span>
       </div>
       <div className="history-list">
-        {jobs.map((historyJob) => {
-          const active = activeStatuses.has(historyJob.status)
-          const selected = historyJob.id === currentJobId
-          const engineLabel = jobEngineLabel(historyJob)
-          return (
-            <article className={`history-row ${selected ? 'selected' : ''}`} key={historyJob.id}>
-              <div className="history-file-icon" aria-hidden="true">♫</div>
-              <div className="history-copy">
-                <strong>{historyJob.original_filename}</strong>
-                <small>{engineLabel} · {formatJobDate(historyJob.created_at)}</small>
-              </div>
-              <div className={`history-status ${active ? 'active' : historyJob.status}`}>
-                <i />
-                {active ? `${historyJob.progress}% processing` : historyJob.status}
-              </div>
-              <div className="history-actions">
-                {historyJob.status === 'completed' && historyJob.assets.instrumental && (
-                  <a href={`${assetUrl(historyJob.assets.instrumental)}?download=true`}>Download</a>
-                )}
-                <button type="button" onClick={() => onOpen(historyJob)}>
-                  {active ? 'Resume' : 'Open'}
-                </button>
-                {!active && (
-                  <button className="danger" type="button" onClick={() => onDelete(historyJob)}>
-                    Delete
+        <AnimatePresence>
+          {jobs.map((historyJob, index) => {
+            const active = activeStatuses.has(historyJob.status)
+            const selected = historyJob.id === currentJobId
+            const engineLabel = jobEngineLabel(historyJob)
+            const ticket = `№${String(index + 1).padStart(2, '0')}`
+            return (
+              <motion.article
+                layout
+                key={historyJob.id}
+                className={`history-row ${selected ? 'selected' : ''}`}
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  transition: reduce
+                    ? { duration: 0.2 }
+                    : { type: 'spring', stiffness: 280, damping: 30, delay: index * 0.04 },
+                }}
+                exit={reduce ? { opacity: 0 } : { opacity: 0, x: -14, transition: { duration: 0.18 } }}
+              >
+                <span className="history-index" aria-hidden="true">{ticket}</span>
+                <div className="history-copy">
+                  <strong>{historyJob.original_filename}</strong>
+                  <small>{engineLabel} · {formatJobDate(historyJob.created_at)}</small>
+                </div>
+                <span className={`history-status ${active ? 'active' : historyJob.status}`}>
+                  {active ? <Eq size="sm" tone="neon" /> : <i aria-hidden="true" />}
+                  {active ? `${historyJob.progress}% processing` : historyJob.status}
+                </span>
+                <div className="history-actions">
+                  {historyJob.status === 'completed' && historyJob.assets.instrumental && (
+                    <a href={`${assetUrl(historyJob.assets.instrumental)}?download=true`}>Download</a>
+                  )}
+                  <button type="button" onClick={() => onOpen(historyJob)}>
+                    {active ? 'Resume' : 'Open'}
                   </button>
-                )}
-              </div>
-            </article>
-          )
-        })}
+                  {!active && (
+                    <button className="danger" type="button" onClick={() => onDelete(historyJob)}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </motion.article>
+            )
+          })}
+        </AnimatePresence>
       </div>
     </section>
   )
@@ -767,6 +836,9 @@ function App() {
 
   const reduce = useReducedMotion()
   const isProcessing = !!job && activeStatuses.has(job.status)
+  // Derived shell flags (presentational only): completion toggles the one-time
+  // gold-bloom stage flash defined in base.css (spec §2.4 / §3.5).
+  const isComplete = job?.status === 'completed'
 
   // Shared card entrance/exit for the four main views (spec §2.5).
   const cardVariants: Variants = reduce
@@ -792,7 +864,7 @@ function App() {
       }
 
   return (
-    <div className={`app-shell${isProcessing ? ' is-processing' : ''}`}>
+    <div className={`app-shell${isProcessing ? ' is-processing' : ''}${isComplete ? ' is-complete' : ''}`}>
       <motion.header
         className="site-header"
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: -14 }}
@@ -1123,7 +1195,7 @@ function App() {
             animate="animate"
             exit="exit"
           >
-            <ProgressCard job={job} />
+            <ProgressCard job={job} reduce={reduce} />
           </motion.div>
         )}
 
@@ -1136,13 +1208,19 @@ function App() {
             animate="animate"
             exit="exit"
           >
-          <section className="failed-card" role="alert">
-            <div className="failed-icon" aria-hidden="true">!</div>
+          <motion.section
+            className="failed-card"
+            role="alert"
+            initial={reduce ? undefined : { x: 0 }}
+            animate={reduce ? undefined : { x: [0, -6, 5, 0] }}
+            transition={reduce ? undefined : { duration: 0.35, ease: 'easeOut', times: [0, 0.35, 0.7, 1] }}
+          >
+            <div className="failed-icon" aria-hidden="true"><AlertIcon size={22} /></div>
             <p className="eyebrow eyebrow--danger">Processing stopped</p>
             <h2>{job.source_type === 'youtube' ? 'We couldn’t fetch this YouTube source' : 'We couldn’t separate this track'}</h2>
             <p>{job.error || 'An unknown processing error occurred.'}</p>
             <button className="secondary-button" type="button" onClick={startOver}>Try another source</button>
-          </section>
+          </motion.section>
           </motion.div>
         )}
 
@@ -1155,7 +1233,7 @@ function App() {
             animate="animate"
             exit="exit"
           >
-            <StemMixer job={job} />
+            <StemMixer job={job} reduce={reduce} />
             <button className="start-over" type="button" onClick={startOver}>Process another source</button>
           </motion.div>
         )}
@@ -1165,6 +1243,7 @@ function App() {
           <JobHistory
             jobs={history}
             currentJobId={job?.id}
+            reduce={reduce}
             onOpen={openStoredJob}
             onDelete={(storedJob) => void deleteStoredJob(storedJob)}
           />

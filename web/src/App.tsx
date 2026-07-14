@@ -13,6 +13,12 @@ import './App.css'
 
 const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1]
 
+/* Platter rotation: 150°/s ≈ the deck's 2.4s/rev spin. Each clock update
+   may only turn the disc by DISC_MAX_STEP_DEG, so a timeline scrub nudges
+   the platter in the seek direction instead of whipping whole rotations. */
+const DISC_DEG_PER_SEC = 150
+const DISC_MAX_STEP_DEG = 10
+
 type ToolStatus = {
   ffmpeg: boolean
   ffprobe: boolean
@@ -280,13 +286,16 @@ function TickNumber({ value, reduce }: { value: number; reduce: boolean | null }
 
 /* The turntable. Purely presentational: the disc, the progress/seek ring,
    the marching-ants drop ring, the tonearm, and a center label (children).
-   Extra props (drag handlers, progressbar roles) spread onto the zone. */
+   Extra props (drag handlers, progressbar roles) spread onto the zone.
+   `spinning` runs the free CSS spin (processing); `discAngle` pins the
+   disc to an exact rotation instead (playback-position-driven). */
 type PlatterProps = {
   spinning?: boolean
   engaged?: boolean
   ring?: number | null
   ringTone?: 'vfd' | 'amber' | 'red'
   dragging?: boolean
+  discAngle?: number | null
   children?: ReactNode
 } & HTMLAttributes<HTMLDivElement>
 
@@ -296,6 +305,7 @@ function Platter({
   ring = null,
   ringTone = 'vfd',
   dragging = false,
+  discAngle = null,
   children,
   ...zoneProps
 }: PlatterProps) {
@@ -308,7 +318,11 @@ function Platter({
     .join(' ')
   return (
     <div className={zoneClass} {...zoneProps}>
-      <div className="platter-disc" aria-hidden="true" />
+      <div
+        className="platter-disc"
+        aria-hidden="true"
+        style={discAngle === null ? undefined : { transform: `rotate(${discAngle}deg)` }}
+      />
       <svg className="platter-ring" viewBox="0 0 100 100" aria-hidden="true">
         <circle className="ring-track" cx="50" cy="50" r="48.6" />
         {ring !== null && (
@@ -457,6 +471,20 @@ function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
   // Presentational fill % for the seek ring / range gradients (derived state).
   const seekPercent = duration ? (Math.min(currentTime, duration) / duration) * 100 : 0
 
+  // Disc angle integrates media-clock deltas (capped per update). Ref writes
+  // are guarded by lastClockRef, so re-renders at the same clock are no-ops.
+  const discAngleRef = useRef(0)
+  const lastClockRef = useRef(0)
+  if (currentTime === 0) {
+    discAngleRef.current = 0
+    lastClockRef.current = 0
+  } else if (currentTime !== lastClockRef.current) {
+    const step = (currentTime - lastClockRef.current) * DISC_DEG_PER_SEC
+    const clamped = Math.max(-DISC_MAX_STEP_DEG, Math.min(DISC_MAX_STEP_DEG, step))
+    discAngleRef.current = (discAngleRef.current + clamped + 360) % 360
+    lastClockRef.current = currentTime
+  }
+
   return (
     <>
       <div className="stage-readout">
@@ -464,7 +492,15 @@ function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
         <p className="readout-sub">Separation complete · {jobEngineLabel(job)} · CPU</p>
       </div>
 
-      <Platter spinning={playing && !reduce} engaged ring={seekPercent} ringTone="amber">
+      <Platter
+        engaged
+        ring={seekPercent}
+        ringTone="amber"
+        /* Pinned to the media clock: freezes on pause, nudges with the seek
+           slider (capped per step), returns to top only when the track
+           restarts at 0:00. */
+        discAngle={reduce ? null : discAngleRef.current}
+      >
         <button
           className="play-button"
           type="button"
@@ -482,7 +518,7 @@ function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
         <div className="transport">
           <span className="transport-time">
             {formatTime(currentTime)}
-            {playing && <Eq size="sm" />}
+            <Eq size="sm" className={playing ? '' : 'eq--paused'} />
           </span>
           <input
             className="transport-range"

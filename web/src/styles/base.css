@@ -171,6 +171,13 @@ input:focus-visible,
   box-shadow: 0 0 6px var(--vfd-glow);
 }
 
+/* VU meter at rest: bars freeze in place and dim, keeping their slot. */
+.eq--paused span {
+  animation-play-state: paused;
+  opacity: 0.28;
+  box-shadow: none;
+}
+
 /* ---- reduced motion: the deck holds still ------------------- */
 
 @media (prefers-reduced-motion: reduce) {

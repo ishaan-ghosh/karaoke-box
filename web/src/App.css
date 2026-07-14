@@ -401,7 +401,14 @@
   text-shadow: 0 0 14px var(--vfd-glow);
 }
 
-.readout-main .tick-number { display: inline-block; }
+/* Fixed-width digit window: digits grow leftward, the % never moves,
+   and the rolling exit frame is anchored inside the window. */
+.tick-number {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 3ch;
+}
 
 .readout-main--title {
   display: block;
@@ -841,13 +848,14 @@ fieldset.module legend { padding: 0; }
 
 .mix-console {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
   width: 100%;
 }
 
 .fader {
   display: grid;
+  min-width: 0;
   gap: 8px;
   padding: 12px 14px;
   border: 1px solid var(--seam);
@@ -1529,6 +1537,6 @@ fieldset.module legend { padding: 0; }
 
   .deck-bottom { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 18px; }
 
-  .mix-console { grid-template-columns: 1fr; }
+  .mix-console { grid-template-columns: minmax(0, 1fr); }
   .status-cluster .status-label { display: none; }
 }

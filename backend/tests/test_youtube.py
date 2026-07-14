@@ -45,8 +45,32 @@ def test_map_youtube_metadata_rejects_live_streams() -> None:
         youtube.map_youtube_metadata({"is_live": True}, source)
 
 
-def test_map_youtube_metadata_keeps_provenance_and_enforces_preflight() -> None:
+def test_map_youtube_metadata_accepts_exactly_600_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = youtube.classify_youtube_url("https://youtu.be/abc123")
+    monkeypatch.setattr(youtube, "MAX_DURATION_SECONDS", 600)
+
+    metadata = youtube.map_youtube_metadata({"duration": 600}, source)
+
+    assert metadata["duration_seconds"] == 600
+
+
+def test_map_youtube_metadata_rejects_duration_above_10_minutes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = youtube.classify_youtube_url("https://youtu.be/abc123")
+    monkeypatch.setattr(youtube, "MAX_DURATION_SECONDS", 600)
+
+    with pytest.raises(youtube.ProcessingError, match="10 minutes or shorter"):
+        youtube.map_youtube_metadata({"duration": 600.1}, source)
+
+
+def test_map_youtube_metadata_keeps_provenance_and_enforces_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = youtube.classify_youtube_url("https://youtu.be/abc123")
+    monkeypatch.setattr(youtube, "MAX_DURATION_SECONDS", 600)
 
     metadata = youtube.map_youtube_metadata(
         {

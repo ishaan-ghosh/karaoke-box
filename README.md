@@ -16,7 +16,7 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 - Local filesystem storage under `data/`
 - MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads
 - Individual HTTPS YouTube video URL ingest through pinned `yt-dlp`
-- 250 MB and 20-minute defaults
+- 250 MB and a 10-minute default source-duration limit; an intentional `KARAOKE_MAX_DURATION_SECONDS` operator override can raise it
 - Live upload/YouTube ingest progress, Demucs model progress, and estimated time remaining
 - Reload-safe active-job restoration and local recent-results history
 - Synchronized instrumental/vocal preview
@@ -28,7 +28,7 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 
 The selectable Phase 1C implementation is locally complete but remains an **experimental, not production-ready** feature. **Demucs** remains the default faster/current engine with all three existing profiles unchanged. **Kimberley Jensen MelBand RoFormer** is an optional high-quality CPU engine selected by the user. Candidate research found it was the strongest screened option with an explicit MIT checkpoint license and reproducible immutable source. See `docs/SEPARATOR_UPGRADE.md` for measured CPU/RAM results, rejected alternatives, pinned hashes, implementation details, and release gates.
 
-All separator paths remain permanently CPU-only. On first use, the roughly 871 MiB optional checkpoint downloads into the local model cache and is verified against its pinned size and SHA-256; it remains until explicit deletion. The checkpoint is not bundled in the installer. Routine tests mock the engine and downloader rather than fetching weights or performing full inference. Release remains blocked pending permitted-fixture A/B listening, 3/10/20-minute CPU and peak-RAM measurements, frozen Windows x64 worker/package validation, a real permitted song on the target Windows PC, and packaged third-party-notice verification.
+All separator paths remain permanently CPU-only. On first use, the roughly 871 MiB optional checkpoint downloads into the local model cache and is verified against its pinned size and SHA-256; it remains until explicit deletion. The checkpoint is not bundled in the installer. Routine tests mock the engine and downloader rather than fetching weights or performing full inference. Release remains blocked pending user A/B listening across the full permitted fixture matrix and Demucs profiles, frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 ## Source inputs and rights
 
@@ -144,7 +144,7 @@ Environment variables for the API:
 | `KARAOKE_DATA_DIR` | `<repo>/data` | Local job directory |
 | `KARAOKE_MODEL_DIR` | `<KARAOKE_DATA_DIR>/models` in browser mode; platform model directory in desktop mode | Verified separator model cache |
 | `KARAOKE_MAX_UPLOAD_BYTES` | `262144000` | Upload limit in bytes |
-| `KARAOKE_MAX_DURATION_SECONDS` | `1200` | Duration limit |
+| `KARAOKE_MAX_DURATION_SECONDS` | `600` | Default 10-minute duration limit; intentionally raise for an operator-approved local policy |
 | `KARAOKE_DEMUCS_MODEL` | `htdemucs` | Model for Natural and Strong Removal profiles |
 | `KARAOKE_DEMUCS_BEST_MODEL` | `htdemucs_ft` | Model for the Best Quality profile |
 | `KARAOKE_CORS_ORIGINS` | local Vite origins | Comma-separated allowed frontend origins |
@@ -184,7 +184,7 @@ The same probe runs as part of `npm run desktop:smoke`. The probe validates the 
 
 ### Separation is slow
 
-The MVP deliberately uses CPU processing. Runtime varies by engine, model, track length, and machine; a full song can take several minutes. Demucs Best Quality runs a bag of fine-tuned models and can take several times longer. MelBand is experimental and has not yet passed the required 3-, 10-, and 20-minute CPU/RAM gates.
+The MVP deliberately uses CPU processing. Runtime varies by engine, model, track length, and machine; a full song can take several minutes. Demucs Best Quality runs a bag of fine-tuned models and can take several times longer. The default supported source-duration range is 10 minutes, while an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS`. MelBand is experimental and still requires the remaining listening, frozen Windows, target-PC, and packaged-notice gates.
 
 The UI combines Demucs's processed-audio counters across every model pass. ETA appears once the first audio segment completes and is recalculated from observed CPU speed. It can move up or down as later segments run. A first-time model download happens before measurable inference, so no reliable ETA is shown during that setup.
 

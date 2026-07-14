@@ -160,7 +160,7 @@ A Windows machine must still test the implementation before release:
 - Windows Defender/SmartScreen behavior,
 - CPU usage, peak RAM, scratch disk, and runtime for each separator engine/profile.
 
-MelBand remains experimental and is not production-ready. Release gates are permitted-fixture A/B listening; 3-, 10-, and 20-minute CPU-time and peak-RAM measurements; frozen Windows x64 worker/package validation; a real permitted song on the target Windows PC; and verification that packaged third-party notices are present.
+MelBand remains experimental and is not production-ready. Release gates are user A/B listening across the full permitted fixture matrix and Demucs profiles; frozen Windows x64 worker/package validation and performance checks; real permitted-song processing on the target Windows PC; and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 ## Migration from the current app
 

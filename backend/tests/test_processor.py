@@ -1,8 +1,64 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from app import processor
+
+
+def test_default_max_duration_is_10_minutes() -> None:
+    backend_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment.pop("KARAOKE_MAX_DURATION_SECONDS", None)
+    environment["PYTHONPATH"] = str(backend_root)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from app.config import MAX_DURATION_SECONDS; print(MAX_DURATION_SECONDS)",
+        ],
+        cwd=backend_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "600.0"
+
+
+def test_probe_audio_accepts_exactly_600_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Result:
+        returncode = 0
+        stdout = '{"format":{"duration":"600"},"streams":[{"codec_type":"audio"}]}'
+        stderr = ""
+
+    monkeypatch.setattr(processor, "MAX_DURATION_SECONDS", 600)
+    monkeypatch.setattr(processor, "resolve_tool", lambda name: name)
+    monkeypatch.setattr(processor.subprocess, "run", lambda *args, **kwargs: Result())
+
+    assert processor.probe_audio(Path("fixture.wav"))["duration_seconds"] == 600.0
+
+
+def test_probe_audio_rejects_duration_above_10_minutes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Result:
+        returncode = 0
+        stdout = '{"format":{"duration":"600.1"},"streams":[{"codec_type":"audio"}]}'
+        stderr = ""
+
+    monkeypatch.setattr(processor, "MAX_DURATION_SECONDS", 600)
+    monkeypatch.setattr(processor, "resolve_tool", lambda name: name)
+    monkeypatch.setattr(processor.subprocess, "run", lambda *args, **kwargs: Result())
+
+    with pytest.raises(processor.ProcessingError, match="10 minutes or shorter"):
+        processor.probe_audio(Path("fixture.wav"))
 
 
 def test_probe_audio_rejects_a_file_without_audio(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,11 +4,11 @@
 
 Phase 1C implementation is locally complete and routine validation passes. The implementation exposes **Kimberley Jensen MelBand RoFormer** as an optional experimental high-quality engine while all existing Demucs profiles remain unchanged and Demucs remains the default faster/current path.
 
-The candidate was selected because it was the strongest CPU-capable option with an explicit model-weight license and a pinned, reproducible source. It is not production-ready or ready for Windows release until permitted-fixture listening tests, 3/10/20-minute CPU and peak-RAM measurements, frozen Windows x64 worker/package validation, a real permitted song on the target Windows PC, and packaged third-party-notice verification pass.
+The candidate was selected because it was the strongest CPU-capable option with an explicit model-weight license and a pinned, reproducible source. It is not production-ready or ready for Windows release until user A/B listening across the full permitted fixture matrix and Demucs profiles, frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification pass. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 Do not replace Demucs, change the meaning of `preserve`, `best`, or `standard`, enable a GPU path, or bundle the model in the installer. Do not dispatch Windows packaging without explicit approval.
 
-Verified local checks for this implementation are 54 backend tests, frontend lint/build, and desktop smoke. Routine checks do not download the checkpoint or run full model inference; the desktop smoke separator probe is no-weight/no-network.
+Verified local checks for this implementation are 59 backend tests, frontend lint/build, and desktop smoke. Routine checks do not download the checkpoint or run full model inference; the desktop smoke separator probe is no-weight/no-network.
 
 ## Recorded research
 
@@ -30,7 +30,20 @@ Current Demucs reference on the same fixture:
 | `preserve` | 22.1 s | 1.85 GiB |
 | `best` (`htdemucs_ft`, four passes) | 58.2 s | 2.45 GiB |
 
-These timings are development-machine measurements, not Windows promises. The MelBand implementation keeps full-track result/counter arrays in memory, so a 10- or 20-minute benchmark is required before setting a minimum-RAM recommendation.
+These research-harness timings are development-machine measurements, not Windows promises. The committed runtime measurements below provide an initial local CPU/RAM record; Windows performance checks remain required before any minimum-RAM recommendation.
+
+## Committed-runtime benchmark
+
+The following measurements are from the committed application runtime at commit `bdb69aebc9262c3e95f2b39bb73f8398bf658de2`, not from the isolated research harness above. They ran on an Apple M3 Max with 36 GiB RAM, CPU-only, using the pinned cached checkpoint after its size and SHA-256 were verified. Each run used a repeated permitted self-created 30-second stereo fixture.
+
+| Fixture | Observed elapsed runtime | Max RSS | Chunks | Swaps | Outputs |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 3 minutes | 119.03 seconds | 3,824,615,424 bytes | 23 | 0 | Stereo 44.1 kHz float32; exactly 180 seconds |
+| 10 minutes | 422.58 seconds | 4,789,993,472 bytes | 75 | 0 | Stereo 44.1 kHz float32; exactly 600 seconds |
+
+The 20-minute run was intentionally aborted before inference after the user rejected sustained 100% CPU as unreasonable; no 20-minute benchmark result exists, and its temporary input was removed. These macOS development measurements are not Windows promises or a minimum-RAM recommendation.
+
+A current-app 30-second MelBand output and all three existing Demucs outputs were assembled under `/tmp/kb-phase1c-gates/listening/self-created-30s/` for user listening. The listening gate remains pending, and these temporary artifacts are not repository files.
 
 ## Pinned model and license record
 
@@ -276,9 +289,8 @@ All workers must preserve the pre-existing documentation and implementation edit
 
 The engine remains experimental and is not production-ready. Before calling it production-ready:
 
-1. Complete A/B listening on permitted fixtures covering reverb, backing vocals, centered guitar/sax/synth, quiet vocals, dense mixes, lossless uploads, and compressed YouTube ingest.
-2. Record perceived vocal residue, instrument damage, and preference against all three Demucs profiles.
-3. Benchmark 3-, 10-, and 20-minute fixtures for CPU time and peak RAM.
-4. Build and smoke the frozen separator worker/package on Windows x64.
-5. Manually process a real permitted song on the target Windows PC.
-6. Confirm third-party notices are present in the packaged artifact.
+1. Complete user A/B listening across the full permitted fixture matrix—reverb, backing vocals, centered guitar/sax/synth, quiet vocals, dense mixes, lossless uploads, and compressed YouTube ingest—and compare all three Demucs profiles.
+2. Record perceived vocal residue, instrument damage, and preference against the current-app MelBand output and all three Demucs profiles.
+3. Build and smoke the frozen separator worker/package on Windows x64, including performance checks for the default 10-minute supported range.
+4. Manually process a real permitted song on the target Windows PC.
+5. Confirm third-party notices are present in the packaged artifact.

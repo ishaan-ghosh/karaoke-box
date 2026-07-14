@@ -71,7 +71,7 @@ On macOS desktop-development mode, the equivalent platform application-data dire
 - MP3/WAV/M4A/FLAC/OGG/AAC/Opus upload
 - Individual HTTPS YouTube video ingest through pinned `yt-dlp`
 - Source-neutral, versioned rights attestation for uploads and URL ingest
-- 250 MB and 20-minute defaults
+- 250 MB and a 10-minute default source-duration limit; an intentional `KARAOKE_MAX_DURATION_SECONDS` operator override can raise it
 - Three profiles:
   - `preserve`: `htdemucs`, original minus predicted vocals; default
   - `best`: `htdemucs_ft`, subtractive, four model passes; slower
@@ -238,7 +238,7 @@ The artifact contains both the portable onedir app and installer. The executable
 
 Current verified local Phase 1C state:
 
-- 54 backend tests pass.
+- 59 backend tests pass.
 - Frontend lint and production build pass.
 - Desktop development smoke test passes, including the no-weight/no-network separator worker probe.
 - Routine tests use mocks, fake models/processes, and short self-created arrays; they do not download the checkpoint or run full model inference.
@@ -256,7 +256,7 @@ Historical packaged Windows baseline `a9bd865`:
 
 - No full packaged separator inference test or Phase 1C Windows package validation has passed; the current smoke path verifies startup/session/health and the no-weight/no-network worker probe without full inference.
 - Current Demucs separation can leave phasey/static-like vocal residue or damage overlapping instruments; the optional MelBand RoFormer engine is experimental and may have different artifacts.
-- MelBand RoFormer is not production-ready. Release gates remain: permitted-fixture A/B listening; 3-, 10-, and 20-minute CPU-time and peak-RAM measurements; frozen Windows x64 worker/package validation; a real permitted song on the target Windows PC; and verification that packaged third-party notices are present.
+- MelBand RoFormer is not production-ready. Remaining gates are user A/B listening across the full permitted fixture matrix and Demucs profiles; frozen Windows x64 worker/package validation and performance checks; real permitted-song processing on the target Windows PC; and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; operators can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 - Model weights download on first use and are not bundled.
 - Installer and executable are unsigned, so SmartScreen may warn.
 - No custom application icon yet.

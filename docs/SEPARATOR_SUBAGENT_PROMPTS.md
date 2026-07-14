@@ -6,7 +6,7 @@ Use this file with `docs/SEPARATOR_UPGRADE.md`. These are implementation tasks, 
 
 Use the installed `pi-subagents` package directly. Do not launch nested `pi` subprocesses.
 
-The packaged `worker` and `reviewer` currently default to `thinking: high`. Implementation/writer workers use Luna; review/reviewer agents use Sol. Before implementation or review, add equivalent user- or project-scope overrides:
+The packaged `worker`, `planner`, and `reviewer` currently default to `thinking: high`. Implementation/writer/fix workers use Luna; planning/planner and review/reviewer agents use Sol. Before implementation, planning, or review, add equivalent user- or project-scope overrides:
 
 ```json
 {
@@ -14,6 +14,10 @@ The packaged `worker` and `reviewer` currently default to `thinking: high`. Impl
     "agentOverrides": {
       "worker": {
         "model": "openai-codex/gpt-5.6-luna",
+        "thinking": "xhigh"
+      },
+      "planner": {
+        "model": "openai-codex/gpt-5.6-sol",
         "thinking": "xhigh"
       },
       "reviewer": {
@@ -25,7 +29,7 @@ The packaged `worker` and `reviewer` currently default to `thinking: high`. Impl
 }
 ```
 
-Run one writer at a time because all workers share the active working tree. For each of workers 1–4, pass the exact task block below to the parent-only tool:
+Phase 1C implementation is bounded and complete; do not reopen its architecture or redesign it. If bounded planning is needed for a future scoped change, use a Sol `planner`. Run one implementation writer at a time because all workers share the active working tree. For each of workers 1–4, pass the exact task block below to the parent-only tool:
 
 ```typescript
 subagent({
@@ -52,7 +56,7 @@ subagent({
 })
 ```
 
-Every child must preserve all pre-existing user changes, especially handoff documents; must not commit or push; must not download the 870.8 MiB checkpoint; must not dispatch CI or Windows packaging; and must not add CUDA, MPS, or DirectML. Children must not launch their own sub-agents.
+Every child must preserve all pre-existing user changes, especially handoff documents; must not commit or push; must not download the 870.8 MiB checkpoint; must not dispatch CI or Windows packaging; and must not add CUDA, MPS, or DirectML. Children must not launch their own sub-agents. Only Luna workers may implement changes; Sol planners and reviewers remain advisory/read-only unless a parent explicitly assigns a narrowly scoped implementation handoff to a Luna worker.
 
 ## Worker 1 — backend adapter and persistence
 

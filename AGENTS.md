@@ -132,11 +132,11 @@ Non-negotiable implementation boundaries:
 - Routine tests must use mocks, fake models, and short self-created arrays; they must not download the checkpoint or run full inference.
 - Run `npm test` and `npm run desktop:smoke` before considering implementation complete. Do not dispatch Windows packaging.
 
-### Required delegation for Phase 1C
+### Required delegation for Phase 1C and future sessions
 
-Use the installed `pi-subagents` package with sequential implementation/writer `worker` agents on `openai-codex/gpt-5.6-luna` at `xhigh` reasoning. Use fresh-context review/reviewer agents on `openai-codex/gpt-5.6-sol` at `xhigh` reasoning. Configure the builtin `worker` and `reviewer` overrides to those model/reasoning levels before starting; their packaged defaults use `high`. Launch each run directly through the `subagent` tool with `async: true`, and use `wait` when no independent coordinator work remains.
+Phase 1C implementation is locally complete; do not reopen its architecture or ask agents to redesign it. For any bounded future planning/planner work or review/reviewer work, use the installed `pi-subagents` package with `openai-codex/gpt-5.6-sol` at `xhigh` reasoning. For any implementation/writer/fix work, use `openai-codex/gpt-5.6-luna` at `xhigh` reasoning. Configure the builtin `planner`, `reviewer`, and `worker` overrides to those model/reasoning levels before starting; their packaged defaults use `high`.
 
-Do not launch nested `pi` subprocesses. Do not ask sub-agents to produce a fresh architecture or give them open-ended discretion. Use the exact prompts and file boundaries in `docs/SEPARATOR_SUBAGENT_PROMPTS.md`; inspect each diff and focused test result before launching the next worker. Workers share the current working tree, so keep one writer at a time. Use a fresh-context Sol reviewer for read-only review; only Luna workers implement changes.
+Do not launch nested `pi` subprocesses. Do not ask sub-agents to produce a fresh architecture or give them open-ended discretion. Use the exact Phase 1C implementation prompts and file boundaries in `docs/SEPARATOR_SUBAGENT_PROMPTS.md`; inspect each diff and focused test result before launching the next worker. Workers share the current working tree, so keep one implementation writer at a time. Preserve fresh-context Sol review behavior; only Luna agents implement changes.
 
 ### Desktop session security
 

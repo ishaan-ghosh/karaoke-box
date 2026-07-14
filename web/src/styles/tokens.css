@@ -1,0 +1,69 @@
+/* ============================================================
+   KARAOKE BOX · DECK-01 — design tokens
+   A 1970s Japanese hi-fi karaoke deck: graphite chassis,
+   cream silkscreen, mint VFD phosphor, amber VU needles.
+   Every color in the app derives from these tokens.
+   ============================================================ */
+
+:root {
+  /* — chassis (cool graphite metal) — */
+  --chassis-0: #0e0f11;               /* the room behind the deck */
+  --chassis-1: #15171a;               /* deck face */
+  --chassis-2: #1c1f23;               /* module panel */
+  --chassis-3: #24282d;               /* raised / hover */
+  --seam: #2b3036;                    /* panel seam hairline */
+  --seam-strong: #3f464e;             /* emphasized edge */
+
+  /* — silkscreen (printed labels on the metal) — */
+  --silkscreen: #ebe6d8;
+  --silkscreen-dim: #a49f92;
+  --silkscreen-faint: #6b675c;
+
+  /* — VFD phosphor (readouts, primary signal) — */
+  --vfd: #63f2c5;
+  --vfd-hot: #9cffdf;
+  --vfd-dim: color-mix(in srgb, var(--vfd) 16%, transparent);
+  --vfd-glow: color-mix(in srgb, var(--vfd) 45%, transparent);
+  --vfd-ghost: color-mix(in srgb, var(--vfd) 7%, transparent);
+  --vfd-well: #0a1512;                /* glass behind the phosphor */
+  --on-vfd: #062018;
+
+  /* — amber (VU meters, arming, warnings) — */
+  --amber: #ffb454;
+  --amber-dim: color-mix(in srgb, var(--amber) 15%, transparent);
+  --amber-glow: color-mix(in srgb, var(--amber) 40%, transparent);
+  --on-amber: #251302;
+
+  /* — LEDs — */
+  --led-red: #ff5148;
+  --led-red-dim: color-mix(in srgb, var(--led-red) 14%, transparent);
+  --led-green: #59e08a;
+  --led-green-dim: color-mix(in srgb, var(--led-green) 14%, transparent);
+
+  /* — type — */
+  --font-panel: 'Archivo Variable', 'Avenir Next', system-ui, sans-serif;
+  --font-vfd: 'Doto Variable', 'Spline Sans Mono Variable', monospace;
+  --font-mono: 'Spline Sans Mono Variable', ui-monospace, monospace;
+
+  /* — space — */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+
+  /* — shape — */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* — elevation / machining — */
+  --bevel-top: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --bevel-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+  --well-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(0, 0, 0, 0.6);
+  --module-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 30px rgba(0, 0, 0, 0.35);
+
+  /* — motion — */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;
+  --dur-med: 320ms;
+  --dur-slow: 700ms;
+}

@@ -10,6 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.2.8",
+    "@fontsource-variable/doto": "^5.2.10",
+    "@fontsource-variable/spline-sans-mono": "^5.2.8",
+    "motion": "^12.42.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

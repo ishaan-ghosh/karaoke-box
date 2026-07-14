@@ -499,7 +499,7 @@ footer {
 .drop-zone > span {
   position: relative;
   z-index: 1;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   font: 400 10px/1.5 var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -572,7 +572,7 @@ footer {
 
 .youtube-source p {
   margin: 14px 0 0;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   font-size: 10px;
   line-height: 1.6;
 }
@@ -602,7 +602,7 @@ footer {
 
 .engine-picker legend small,
 .quality-picker legend small {
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   font: 400 9px/1.4 var(--font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -708,7 +708,7 @@ footer {
 
 .engine-copy small,
 .quality-copy small {
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   font-size: 9px;
   line-height: 1.5;
 }
@@ -774,7 +774,7 @@ footer {
 
 .rights-check > span:last-child { display: flex; flex-direction: column; gap: 3px; }
 .rights-check strong { color: var(--ink-muted); font-size: 12px; font-weight: 600; }
-.rights-check small { color: var(--ink-faint); font-size: 10px; line-height: 1.5; }
+.rights-check small { color: var(--ink-muted); font-size: 10px; line-height: 1.5; }
 
 /* ---- primary CTA: neon fill, outer glow, press squash ------- */
 .primary-button {

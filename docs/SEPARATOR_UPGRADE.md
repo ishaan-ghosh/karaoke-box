@@ -4,11 +4,11 @@
 
 Phase 1C implementation is locally complete and routine validation passes. The implementation exposes **Kimberley Jensen MelBand RoFormer** as an optional experimental high-quality engine while all existing Demucs profiles remain unchanged and Demucs remains the default faster/current path.
 
-The candidate was selected because it was the strongest CPU-capable option with an explicit model-weight license and a pinned, reproducible source. It is not production-ready or ready for Windows release until user A/B listening across the full permitted fixture matrix and Demucs profiles, frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification pass. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+The candidate was selected because it was the strongest CPU-capable option with an explicit model-weight license and a pinned, reproducible source. The full permitted real-song/fixture listening gate is complete: the user made same-song A/B comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. MelBand is not production-ready or ready for Windows release until the remaining frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification pass. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 Do not replace Demucs, change the meaning of `preserve`, `best`, or `standard`, enable a GPU path, or bundle the model in the installer. Do not dispatch Windows packaging without explicit approval.
 
-Verified local checks for this implementation are 59 backend tests, frontend lint/build, and desktop smoke. Routine checks do not download the checkpoint or run full model inference; the desktop smoke separator probe is no-weight/no-network.
+Verified local checks for this implementation are 61 backend tests, frontend lint/build, and desktop smoke. Routine checks do not download the checkpoint or run full model inference; the desktop smoke separator probe is no-weight/no-network.
 
 ## Recorded research
 
@@ -43,7 +43,7 @@ The following measurements are from the committed application runtime at commit 
 
 The 20-minute run was intentionally aborted before inference after the user rejected sustained 100% CPU as unreasonable; no 20-minute benchmark result exists, and its temporary input was removed. These macOS development measurements are not Windows promises or a minimum-RAM recommendation.
 
-A current-app 30-second MelBand output and all three existing Demucs outputs were assembled under `/tmp/kb-phase1c-gates/listening/self-created-30s/` for user listening. The listening gate remains pending, and these temporary artifacts are not repository files.
+A current-app 30-second MelBand output and all three existing Demucs outputs were assembled under `/tmp/kb-phase1c-gates/listening/self-created-30s/` for user listening; these temporary artifacts are not repository files. The user subsequently completed the full permitted real-song/fixture listening gate with same-song comparisons against all three Demucs profiles and preferred MelBand on every test. Vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better.
 
 ## Pinned model and license record
 
@@ -287,10 +287,8 @@ All workers must preserve the pre-existing documentation and implementation edit
 
 ## Release gates still pending
 
-The engine remains experimental and is not production-ready. Before calling it production-ready:
+The engine remains experimental and is not production-ready. The full permitted real-song/fixture listening gate is complete: the user made same-song A/B comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Before calling it production-ready:
 
-1. Complete user A/B listening across the full permitted fixture matrix—reverb, backing vocals, centered guitar/sax/synth, quiet vocals, dense mixes, lossless uploads, and compressed YouTube ingest—and compare all three Demucs profiles.
-2. Record perceived vocal residue, instrument damage, and preference against the current-app MelBand output and all three Demucs profiles.
-3. Build and smoke the frozen separator worker/package on Windows x64, including performance checks for the default 10-minute supported range.
-4. Manually process a real permitted song on the target Windows PC.
-5. Confirm third-party notices are present in the packaged artifact.
+1. Build and smoke the frozen separator worker/package on Windows x64, including performance checks for the default 10-minute supported range.
+2. Manually process a real permitted song on the target Windows PC.
+3. Confirm third-party notices are present in the packaged artifact.

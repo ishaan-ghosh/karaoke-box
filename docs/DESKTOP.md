@@ -160,7 +160,7 @@ A Windows machine must still test the implementation before release:
 - Windows Defender/SmartScreen behavior,
 - CPU usage, peak RAM, scratch disk, and runtime for each separator engine/profile.
 
-MelBand remains experimental and is not production-ready. Release gates are user A/B listening across the full permitted fixture matrix and Demucs profiles; frozen Windows x64 worker/package validation and performance checks; real permitted-song processing on the target Windows PC; and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+MelBand remains experimental and is not production-ready. The full permitted real-song/fixture A/B listening gate is complete: the user made same-song comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Remaining release gates are frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 ## Migration from the current app
 

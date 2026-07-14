@@ -238,12 +238,13 @@ The artifact contains both the portable onedir app and installer. The executable
 
 Current verified local Phase 1C state:
 
-- 59 backend tests pass.
+- 61 backend tests pass.
 - Frontend lint and production build pass.
 - Desktop development smoke test passes, including the no-weight/no-network separator worker probe.
 - Routine tests use mocks, fake models/processes, and short self-created arrays; they do not download the checkpoint or run full model inference.
 - A valid cached checkpoint, when present, is reused and is not redownloaded by routine validation.
-- The implementation remains experimental and is not production-ready pending the release gates below.
+- The user completed full permitted real-song/fixture A/B listening with same-song comparisons against all three Demucs profiles. MelBand was preferred on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better.
+- The implementation remains experimental and is not production-ready pending the remaining release gates below.
 
 Historical packaged Windows baseline `a9bd865`:
 
@@ -256,7 +257,7 @@ Historical packaged Windows baseline `a9bd865`:
 
 - No full packaged separator inference test or Phase 1C Windows package validation has passed; the current smoke path verifies startup/session/health and the no-weight/no-network worker probe without full inference.
 - Current Demucs separation can leave phasey/static-like vocal residue or damage overlapping instruments; the optional MelBand RoFormer engine is experimental and may have different artifacts.
-- MelBand RoFormer is not production-ready. Remaining gates are user A/B listening across the full permitted fixture matrix and Demucs profiles; frozen Windows x64 worker/package validation and performance checks; real permitted-song processing on the target Windows PC; and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; operators can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+- MelBand RoFormer is not production-ready. The full permitted real-song/fixture A/B listening gate is complete: in same-song comparisons against all three Demucs profiles, the user preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Remaining gates are frozen Windows x64 worker/package validation and performance checks; real permitted-song processing on the target Windows PC; and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; operators can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 - Model weights download on first use and are not bundled.
 - Installer and executable are unsigned, so SmartScreen may warn.
 - No custom application icon yet.

@@ -97,6 +97,26 @@ def verify_model(path: Path, manifest: ModelManifest = MELBAND_MODEL_MANIFEST) -
     return size == manifest.expected_size and digest == manifest.sha256
 
 
+def _cleanup_partial(partial_path: Path) -> None:
+    """Remove an incomplete download, converting I/O failures to safe errors."""
+
+    try:
+        partial_path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise ProcessingError(
+            "An incomplete separator model download could not be cleared safely."
+        ) from exc
+
+
+def _cleanup_partial_best_effort(partial_path: Path) -> None:
+    """Best-effort cleanup that never masks the primary processing error."""
+
+    try:
+        _cleanup_partial(partial_path)
+    except ProcessingError:
+        pass
+
+
 def _emit_progress(
     callback: ProgressCallback | None,
     downloaded: int,
@@ -150,7 +170,7 @@ def download_model(
         except OSError as exc:
             raise ProcessingError("The cached separator model is invalid and could not be replaced.") from exc
 
-    partial_path.unlink(missing_ok=True)
+    _cleanup_partial(partial_path)
     open_url = opener or urllib.request.urlopen
     # A zero event marks a real download. Valid-cache reuse above emits no
     # progress event, allowing callers to keep their verification message.
@@ -178,13 +198,13 @@ def download_model(
         os.replace(partial_path, final_path)
         return final_path
     except ProcessingError:
-        partial_path.unlink(missing_ok=True)
+        _cleanup_partial_best_effort(partial_path)
         raise
     except (OSError, urllib.error.URLError, ValueError) as exc:
-        partial_path.unlink(missing_ok=True)
+        _cleanup_partial_best_effort(partial_path)
         raise ProcessingError("The separator model could not be downloaded or verified.") from exc
     except Exception as exc:
-        partial_path.unlink(missing_ok=True)
+        _cleanup_partial_best_effort(partial_path)
         raise ProcessingError("The separator model could not be downloaded or verified.") from exc
 
 

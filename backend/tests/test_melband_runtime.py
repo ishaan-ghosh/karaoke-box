@@ -127,6 +127,63 @@ def test_model_cache_cleans_partial_download_on_interruption(tmp_path: Path) -> 
     assert not model_path(tmp_path, manifest).with_name("model.ckpt.part").exists()
 
 
+def test_model_cache_preserves_primary_processing_error_when_partial_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import app.separators.model_cache as cache
+
+    payload = b"expected"
+    manifest = _manifest(payload)
+    partial_path = model_path(tmp_path, manifest).with_name("model.ckpt.part")
+    original_unlink = cache.Path.unlink
+    unlink_calls = 0
+
+    def flaky_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        nonlocal unlink_calls
+        if path == partial_path:
+            unlink_calls += 1
+            if unlink_calls == 2:
+                raise OSError("cleanup failed")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(cache.Path, "unlink", flaky_unlink)
+
+    with pytest.raises(ProcessingError, match="unexpected size"):
+        download_model(
+            manifest,
+            models_dir=tmp_path,
+            opener=lambda *args, **kwargs: _Response([b"wrong"]),
+        )
+    assert unlink_calls == 2
+
+
+def test_model_cache_surfaces_sanitized_error_when_stale_partial_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import app.separators.model_cache as cache
+
+    payload = b"expected"
+    manifest = _manifest(payload)
+    partial_path = model_path(tmp_path, manifest).with_name("model.ckpt.part")
+    partial_path.parent.mkdir(parents=True)
+    partial_path.write_bytes(b"stale")
+
+    def fail_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        if path == partial_path:
+            raise OSError("permission denied")
+        Path.unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(cache.Path, "unlink", fail_unlink)
+
+    with pytest.raises(ProcessingError, match="could not be cleared safely"):
+        download_model(
+            manifest,
+            models_dir=tmp_path,
+            opener=lambda *args, **kwargs: pytest.fail("download must not start"),
+        )
+    assert partial_path.read_bytes() == b"stale"
+
+
 def test_model_cache_preserves_final_file_when_verification_has_io_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

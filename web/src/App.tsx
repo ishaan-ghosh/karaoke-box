@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { Variants } from 'motion/react'
+import { ShieldIcon, WaveMark } from './components/icons'
 import './App.css'
+
+const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1]
 
 type ToolStatus = {
   ffmpeg: boolean
@@ -760,24 +765,90 @@ function App() {
         .map(([tool]) => tool)
     : []
 
+  const reduce = useReducedMotion()
+  const isProcessing = !!job && activeStatuses.has(job.status)
+
+  // Shared card entrance/exit for the four main views (spec §2.5).
+  const cardVariants: Variants = reduce
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1, transition: { duration: 0.2 } },
+        exit: { opacity: 0, transition: { duration: 0.15 } },
+      }
+    : {
+        initial: { opacity: 0, y: 16, scale: 0.985 },
+        animate: {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          transition: { type: 'spring', stiffness: 220, damping: 26, delay: 0.06 },
+        },
+        exit: {
+          opacity: 0,
+          y: -8,
+          scale: 0.985,
+          transition: { duration: 0.2, ease: EASE_OUT },
+        },
+      }
+
   return (
-    <div className="app-shell">
-      <header className="site-header">
+    <div className={`app-shell${isProcessing ? ' is-processing' : ''}`}>
+      <motion.header
+        className="site-header"
+        initial={reduce ? { opacity: 0 } : { opacity: 0, y: -14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: EASE_OUT }}
+      >
         <a className="brand" href="/" aria-label="Karaoke Box home">
-          <span className="brand-mark"><WaveIcon /></span>
-          <span>Karaoke Box</span>
+          <span className="brand-mark" aria-hidden="true"><WaveMark size={20} /></span>
+          <span className="brand-wordmark">Karaoke Box</span>
         </a>
-        <span className="local-pill"><i /> Local only</span>
-      </header>
+        <span className="local-pill"><i aria-hidden="true" /> Local only</span>
+      </motion.header>
 
       <main>
-        <section className="hero-copy">
-          <p className="eyebrow">Make the room your stage</p>
-          <h1>Turn your track into<br /><em>karaoke.</em></h1>
-          <p>
+        <section className="hero">
+          <motion.p
+            className="eyebrow eyebrow--gold"
+            initial={{ opacity: 0, y: reduce ? 0 : 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08, duration: 0.4, ease: EASE_OUT }}
+          >
+            Make the room your stage
+          </motion.p>
+          <h1 className="hero-title">
+            <span className="hero-line">
+              <motion.span
+                className="hero-line__inner"
+                initial={reduce ? { opacity: 0 } : { y: '110%' }}
+                animate={reduce ? { opacity: 1 } : { y: '0%' }}
+                transition={{ delay: 0.2, duration: 0.7, ease: EASE_OUT }}
+              >
+                Turn your track into
+              </motion.span>
+            </span>
+            <motion.span
+              className="hero-neon"
+              initial={{ opacity: 0 }}
+              animate={reduce ? { opacity: 1 } : { opacity: [0, 1, 0.25, 1, 0.55, 1] }}
+              transition={
+                reduce
+                  ? { delay: 0.36, duration: 0.4 }
+                  : { delay: 0.5, duration: 0.72, times: [0, 0.16, 0.3, 0.5, 0.72, 1] }
+              }
+            >
+              karaoke.
+            </motion.span>
+          </h1>
+          <motion.p
+            className="hero-lede"
+            initial={{ opacity: 0, y: reduce ? 0 : 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.9, duration: 0.5, ease: EASE_OUT }}
+          >
             Upload music or provide a YouTube video you’re allowed to adapt. Karaoke Box
             separates the vocals locally, then gives you a full-quality instrumental to sing over.
-          </p>
+          </motion.p>
         </section>
 
         {healthError && (
@@ -799,7 +870,16 @@ function App() {
           </div>
         )}
 
+        <AnimatePresence mode="wait">
         {!restoringJobs && !job && (
+          <motion.div
+            className="stage-view"
+            key="upload"
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
           <section className="upload-card" aria-labelledby="upload-heading">
             <div className="card-heading">
               <span>01</span>
@@ -1008,26 +1088,55 @@ function App() {
               </div>
             )}
           </section>
+          </motion.div>
         )}
 
-        {job && activeStatuses.has(job.status) && <ProgressCard job={job} />}
+        {job && activeStatuses.has(job.status) && (
+          <motion.div
+            className="stage-view"
+            key="progress"
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <ProgressCard job={job} />
+          </motion.div>
+        )}
 
         {job?.status === 'failed' && (
+          <motion.div
+            className="stage-view"
+            key="failed"
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
           <section className="failed-card" role="alert">
             <div className="failed-icon" aria-hidden="true">!</div>
-            <p className="eyebrow">Processing stopped</p>
+            <p className="eyebrow eyebrow--danger">Processing stopped</p>
             <h2>{job.source_type === 'youtube' ? 'We couldn’t fetch this YouTube source' : 'We couldn’t separate this track'}</h2>
             <p>{job.error || 'An unknown processing error occurred.'}</p>
             <button className="secondary-button" type="button" onClick={startOver}>Try another source</button>
           </section>
+          </motion.div>
         )}
 
         {job?.status === 'completed' && (
-          <>
+          <motion.div
+            className="stage-view"
+            key="result"
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
             <StemMixer job={job} />
             <button className="start-over" type="button" onClick={startOver}>Process another source</button>
-          </>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {!restoringJobs && (
           <JobHistory
@@ -1038,24 +1147,32 @@ function App() {
           />
         )}
 
-        <section className="privacy-strip">
-          <div className="privacy-icon" aria-hidden="true">⌂</div>
-          <div>
-            <strong>Your sources and stems stay on this computer</strong>
-            <p>After ingest, sources and stems are stored only in Karaoke Box’s local application data.</p>
-          </div>
-          <div className="privacy-detail">
-            <span>CPU processing</span>
-            <span>WAV output</span>
-            <span>No cloud storage</span>
-          </div>
-        </section>
+        <motion.section
+          className="house-rules"
+          aria-label="House rules"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.9, duration: 0.5, ease: EASE_OUT }}
+        >
+          <span className="house-rules__mark" aria-hidden="true"><ShieldIcon size={15} /></span>
+          <ul className="house-rules__list">
+            <li>Sources &amp; stems stay on this computer</li>
+            <li>Stored only in local app data</li>
+            <li>CPU processing</li>
+            <li>WAV output</li>
+            <li>No cloud storage</li>
+          </ul>
+        </motion.section>
       </main>
 
-      <footer>
+      <motion.footer
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.95, duration: 0.5, ease: EASE_OUT }}
+      >
         <span>Karaoke Box · Local studio</span>
         <span>Separation does not change a song’s underlying rights.</span>
-      </footer>
+      </motion.footer>
     </div>
   )
 }

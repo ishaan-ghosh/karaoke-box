@@ -1,0 +1,242 @@
+/* ============================================================
+   Karaoke Box — base layer
+   Reset · body type · the "room" atmosphere · grain · shared
+   keyframes · the Eq motif · focus ring · reduced-motion switch.
+   Imported after tokens.css, before App.css (see main.tsx).
+   ============================================================ */
+
+/* ---- reset --------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--bg-0);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.7;
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--bg-0);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  color: inherit;
+}
+
+svg {
+  display: block;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- the room: atmosphere layers ----------------------------- */
+/* A fixed, non-interactive stack behind everything:
+   ::before  = two huge radial washes (neon UR, gold ML) drifting
+   ::after   = static SVG feTurbulence grain, overlay-blended        */
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  isolation: isolate;
+  overflow-x: clip;
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.app-shell::before {
+  background:
+    radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
+    radial-gradient(56rem 52rem at 6% 54%, var(--bg-glow-gold), transparent 62%);
+  animation: atmosphere-drift 90s ease-in-out infinite alternate;
+}
+
+.app-shell::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+}
+
+/* processing "warm wash" — neon wash intensifies while a job runs */
+.app-shell.is-processing::before {
+  background:
+    radial-gradient(60rem 46rem at 88% 4%, rgba(255, 61, 99, 0.17), transparent 60%),
+    radial-gradient(56rem 52rem at 6% 54%, var(--bg-glow-gold), transparent 62%);
+  animation: atmosphere-drift 60s ease-in-out infinite alternate,
+    warm-pulse 6s ease-in-out infinite;
+}
+
+/* one-time gold stage flash on completion — Stage 3 toggles .is-complete */
+.app-shell.is-complete::before {
+  animation: gold-bloom 1200ms var(--ease-out);
+}
+
+/* ---- shared keyframes ---------------------------------------- */
+@keyframes atmosphere-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(-2.5%, 2%, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes warm-pulse {
+  50% {
+    filter: brightness(1.28);
+  }
+}
+
+@keyframes gold-bloom {
+  0% {
+    background:
+      radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
+      radial-gradient(56rem 52rem at 6% 54%, rgba(242, 177, 62, 0.13), transparent 62%);
+  }
+  30% {
+    background:
+      radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
+      radial-gradient(60rem 56rem at 6% 54%, rgba(242, 177, 62, 0.32), transparent 66%);
+  }
+  100% {
+    background:
+      radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
+      radial-gradient(56rem 52rem at 6% 54%, var(--bg-glow-gold), transparent 62%);
+  }
+}
+
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes breathe-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---- the Eq motif (reusable 5-bar equalizer, spec §2.5) ------ */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+}
+
+.eq span {
+  display: block;
+  flex: 0 0 auto;
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--gold);
+  transform-origin: bottom center;
+  animation: eq-bounce 900ms var(--ease-out) infinite;
+}
+
+.eq span:nth-child(1) { animation-delay: -600ms; animation-duration: 820ms; }
+.eq span:nth-child(2) { animation-delay: -260ms; animation-duration: 980ms; }
+.eq span:nth-child(3) { animation-delay: -460ms; animation-duration: 700ms; }
+.eq span:nth-child(4) { animation-delay: -120ms; animation-duration: 900ms; }
+.eq span:nth-child(5) { animation-delay: -360ms; animation-duration: 1040ms; }
+
+.eq--sm { height: 11px; gap: 1.5px; }
+.eq--sm span { width: 2px; }
+
+.eq--md { height: 18px; gap: 2px; }
+
+.eq--lg { height: 44px; gap: 4px; }
+.eq--lg span { width: 5px; border-radius: 3px; }
+
+/* neon-tinted variant for "original vocals" / active accents */
+.eq--neon span { background: var(--neon); }
+
+/* ---- focus ring ---------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--neon);
+  outline-offset: 3px;
+}
+
+/* ---- reduced motion: global kill switch ---------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .app-shell::before,
+  .app-shell.is-processing::before,
+  .app-shell.is-complete::before {
+    animation: none !important;
+  }
+
+  .eq span {
+    animation: none !important;
+    transform: scaleY(0.6);
+  }
+}

@@ -1,0 +1,81 @@
+/* ============================================================
+   Karaoke Box — "Neon Lounge" design tokens
+   Single source of truth for color, type, space, shape, motion.
+   Every value the app paints with lives here (spec §2.1–2.5).
+   ============================================================ */
+
+:root {
+  /* ---- room ---------------------------------------------- */
+  --bg-0: #0f0b09;                         /* page — warm black */
+  --bg-glow-neon: rgba(255, 61, 99, 0.10); /* upper-right wash */
+  --bg-glow-gold: rgba(242, 177, 62, 0.05);/* mid-left wash */
+
+  /* ---- surfaces (layered wood-dark panels) --------------- */
+  --surface-1: #191310;   /* cards */
+  --surface-2: #221a15;   /* raised wells, inputs */
+  --surface-3: #2b211a;   /* hover / selected fills */
+  --line-1: #33291f;      /* hairline */
+  --line-2: #4d3d2e;      /* strong border / hover */
+
+  /* ---- ink ----------------------------------------------- */
+  --ink: #f7efe3;
+  --ink-muted: #a89a89;
+  --ink-faint: #71655a;
+
+  /* ---- neon — primary accent (signage pink-red) ---------- */
+  --neon: #ff3d63;
+  --neon-hot: #ff6584;                    /* hover */
+  --neon-dim: rgba(255, 61, 99, 0.14);
+  --neon-glow: rgba(255, 61, 99, 0.40);   /* text/box-shadow blooms */
+  --on-neon: #1c0910;                     /* text on neon fills */
+
+  /* ---- gold — secondary accent (VU meters, "ready") ------ */
+  --gold: #f2b13e;
+  --gold-dim: rgba(242, 177, 62, 0.14);
+  --gold-glow: rgba(242, 177, 62, 0.35);
+  --on-gold: #201505;
+
+  /* ---- status -------------------------------------------- */
+  --led-green: #7cd992;                   /* "Local only" LED only */
+  --danger: #e06055;
+  --danger-dim: rgba(224, 96, 85, 0.13);
+  --warn: #d9a05b;
+  --warn-dim: rgba(217, 160, 91, 0.12);
+
+  /* ---- typography (bundled via fontsource, offline) ------ */
+  --font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'Spline Sans Mono Variable', ui-monospace, monospace;
+
+  /* ---- spacing scale ------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+
+  /* ---- radius -------------------------------------------- */
+  --r-sm: 8px;    /* chips, inputs */
+  --r-md: 12px;   /* controls, wells */
+  --r-lg: 20px;   /* cards */
+  --r-pill: 999px;
+
+  /* ---- elevation ----------------------------------------- */
+  --shadow-card: 0 30px 90px rgba(0, 0, 0, 0.45);
+  --well-inset: inset 0 1px 0 rgba(0, 0, 0, 0.4);
+  --card-topline: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.14),
+    transparent
+  );
+
+  /* ---- motion (spec §2.5) -------------------------------- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;   /* hover / press */
+  --dur-med: 320ms;    /* state changes */
+  --dur-slow: 700ms;   /* view entrances */
+}

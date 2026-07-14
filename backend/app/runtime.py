@@ -42,6 +42,22 @@ def demucs_command() -> list[str]:
     return [sys.executable, "-u", "-m", "demucs"]
 
 
+def separator_worker_command() -> list[str]:
+    """Return the private CPU-only MelBand worker command."""
+
+    if is_frozen():
+        return [sys.executable, "--internal-separator"]
+    return [sys.executable, "-u", "-m", "app.separators.worker"]
+
+
+def separator_worker_cwd() -> Path | None:
+    """Return the import root needed by the development worker command."""
+
+    if is_frozen():
+        return None
+    return Path(__file__).resolve().parents[1]
+
+
 def ytdlp_command() -> list[str]:
     # Keep YouTube ingest on the same frozen-runtime adapter as Demucs. The
     # packaged executable dispatches this private command to yt-dlp's Python

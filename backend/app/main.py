@@ -21,6 +21,11 @@ from .config import (
 from .jobs import ACTIVE_STATUSES, Job, JobManager, JobStore
 from .processor import tool_status
 from .profiles import DEFAULT_QUALITY, SeparationQuality
+from .separators.catalog import (
+    DEFAULT_SEPARATOR_ENGINE,
+    SeparatorEngine,
+    resolve_selection,
+)
 from .rights import RIGHTS_ATTESTATION_VERSION
 from .runtime import web_dist_dir
 from .youtube import YouTubeUrlError, classify_youtube_url
@@ -95,8 +100,13 @@ async def create_job(
     rights_confirmed: Annotated[bool, Form()],
     attestation_version: Annotated[str, Form()],
     quality: Annotated[SeparationQuality, Form()] = DEFAULT_QUALITY,
+    separator_engine: Annotated[SeparatorEngine, Form()] = DEFAULT_SEPARATOR_ENGINE,
 ) -> dict[str, Any]:
     require_rights_confirmation(rights_confirmed, attestation_version)
+    try:
+        selection = resolve_selection(separator_engine, quality)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     original_filename = Path(file.filename or "audio").name
     suffix = Path(original_filename).suffix.lower()
@@ -111,6 +121,8 @@ async def create_job(
         0,
         quality,
         source_type="upload",
+        separator_engine=selection.separator_engine,
+        separator_model=selection.separator_model,
     )
     source_path = job_store.job_dir(job.id) / job.source_filename
     size = 0
@@ -146,11 +158,16 @@ class YouTubeJobRequest(BaseModel):
     rights_confirmed: bool
     attestation_version: str
     quality: SeparationQuality = DEFAULT_QUALITY
+    separator_engine: SeparatorEngine = DEFAULT_SEPARATOR_ENGINE
 
 
 @app.post("/api/jobs/youtube", status_code=202)
 def create_youtube_job(request: YouTubeJobRequest) -> dict[str, Any]:
     require_rights_confirmation(request.rights_confirmed, request.attestation_version)
+    try:
+        selection = resolve_selection(request.separator_engine, request.quality)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         source = classify_youtube_url(request.url)
     except YouTubeUrlError as exc:
@@ -162,6 +179,8 @@ def create_youtube_job(request: YouTubeJobRequest) -> dict[str, Any]:
         0,
         request.quality,
         source_type="youtube",
+        separator_engine=selection.separator_engine,
+        separator_model=selection.separator_model,
         source_url=source.canonical_url,
         canonical_url=source.canonical_url,
         video_id=source.video_id,

@@ -344,6 +344,7 @@ main {
   font-size: 12px;
 }
 
+.engine-picker,
 .quality-picker {
   min-width: 0;
   margin: 24px 0 0;
@@ -352,6 +353,7 @@ main {
   border-top: 1px solid var(--line);
 }
 
+.engine-picker legend,
 .quality-picker legend {
   width: 100%;
   display: flex;
@@ -363,10 +365,75 @@ main {
   font-weight: 600;
 }
 
+.engine-picker legend small,
 .quality-picker legend small {
   color: var(--faint);
   font-size: 9px;
   font-weight: 400;
+}
+
+.engine-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.engine-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.012);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.engine-option:hover { border-color: #554f49; }
+.engine-option.selected {
+  border-color: rgba(239, 106, 50, 0.72);
+  background: rgba(239, 106, 50, 0.055);
+}
+
+.engine-option > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.engine-option > input:focus-visible + .radio-mark {
+  outline: 2px solid var(--orange-light);
+  outline-offset: 2px;
+}
+
+.engine-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.engine-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d9d4cd;
+  font-size: 11px;
+}
+.engine-copy strong em {
+  padding: 3px 5px;
+  border-radius: 4px;
+  color: var(--orange-light);
+  background: rgba(239, 106, 50, 0.1);
+  font: 500 7px 'DM Mono', monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.engine-copy small {
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .quality-options {
@@ -409,7 +476,8 @@ main {
   background-clip: content-box;
 }
 
-.quality-option.selected .radio-mark {
+.quality-option.selected .radio-mark,
+.engine-option.selected .radio-mark {
   border-color: var(--orange);
   background-color: var(--orange);
 }
@@ -938,7 +1006,9 @@ input:focus-visible {
   .progress-readout small { grid-column: 1 / -1; text-align: left; }
   .stage-list li { min-width: 0; flex: 1; font-size: 0; }
   .mixer-grid { grid-template-columns: 1fr; }
+  .engine-picker legend,
   .quality-picker legend { display: block; }
+  .engine-picker legend small,
   .quality-picker legend small { display: block; margin-top: 4px; }
   .quality-option { grid-template-columns: auto 1fr; }
   .quality-speed { grid-column: 2; }

@@ -13,12 +13,14 @@ type Health = {
 }
 
 type SeparationQuality = 'preserve' | 'best' | 'standard'
+type SeparatorEngine = 'demucs' | 'melband_roformer'
 
 type SourceType = 'upload' | 'youtube'
 
 type JobStatus =
   | 'queued'
   | 'ingesting'
+  | 'preparing'
   | 'validating'
   | 'separating'
   | 'finalizing'
@@ -52,6 +54,8 @@ type Job = {
   total_passes: number | null
   error: string | null
   quality: SeparationQuality
+  separator_engine: SeparatorEngine
+  separator_model: string
   created_at: string
   updated_at: string
   assets: Partial<Record<'instrumental' | 'vocals', string>>
@@ -60,11 +64,14 @@ type Job = {
 const activeStatuses = new Set<JobStatus>([
   'queued',
   'ingesting',
+  'preparing',
   'validating',
   'separating',
   'finalizing',
 ])
 const currentJobStorageKey = 'karaoke-box.current-job-id'
+const defaultSeparatorEngine: SeparatorEngine = 'demucs'
+const melbandModelId = 'kimberley_melband_roformer_v1'
 const rightsAttestationVersion = '1'
 const rightsAttestationText =
   'I confirm that I own this source recording or am authorized to use it, including downloading it when I provide a URL, and that I am permitted to process and export it.'
@@ -131,6 +138,41 @@ function jobDisplayName(job: Job) {
   return job.source_type === 'youtube' && job.title ? job.title : job.original_filename
 }
 
+function isSeparationQuality(value: unknown): value is SeparationQuality {
+  return value === 'preserve' || value === 'best' || value === 'standard'
+}
+
+function fallbackModelForQuality(quality: SeparationQuality) {
+  return quality === 'best' ? 'htdemucs_ft' : 'htdemucs'
+}
+
+function normalizeJob(payload: unknown): Job {
+  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+  const quality = isSeparationQuality(record.quality) ? record.quality : 'preserve'
+  const engine = record.separator_engine === 'melband_roformer'
+    ? 'melband_roformer'
+    : defaultSeparatorEngine
+  const separatorModel = typeof record.separator_model === 'string' && record.separator_model
+    ? record.separator_model
+    : engine === 'melband_roformer'
+      ? melbandModelId
+      : fallbackModelForQuality(quality)
+  return {
+    ...record,
+    quality,
+    separator_engine: engine,
+    separator_model: separatorModel,
+  } as Job
+}
+
+function jobEngineLabel(job: Job) {
+  if (job.separator_engine === 'melband_roformer') {
+    return `High quality · MelBand RoFormer (${job.separator_model})`
+  }
+  const qualityName = qualityOptions.find(({ value }) => value === job.quality)?.name
+  return `Demucs · ${qualityName || 'CPU profile'} (${job.separator_model})`
+}
+
 function upsertJob(jobs: Job[], nextJob: Job) {
   return [nextJob, ...jobs.filter(({ id }) => id !== nextJob.id)].sort((left, right) =>
     right.created_at.localeCompare(left.created_at),
@@ -173,7 +215,7 @@ function uploadJob(body: FormData, onProgress: (percent: number) => void) {
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) {
         onProgress(100)
-        resolve(request.response as Job)
+        resolve(normalizeJob(request.response))
         return
       }
       const detail = (request.response as { detail?: string } | null)?.detail
@@ -183,7 +225,11 @@ function uploadJob(body: FormData, onProgress: (percent: number) => void) {
   })
 }
 
-async function createYoutubeJob(url: string, quality: SeparationQuality) {
+async function createYoutubeJob(
+  url: string,
+  quality: SeparationQuality,
+  separatorEngine: SeparatorEngine,
+) {
   const response = await fetch(apiUrl('/api/jobs/youtube'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -191,11 +237,12 @@ async function createYoutubeJob(url: string, quality: SeparationQuality) {
       url,
       rights_confirmed: true,
       attestation_version: rightsAttestationVersion,
-      quality,
+      quality: separatorEngine === 'melband_roformer' ? 'preserve' : quality,
+      separator_engine: separatorEngine,
     }),
   })
   if (!response.ok) throw new Error(await responseError(response))
-  return (await response.json()) as Job
+  return normalizeJob(await response.json())
 }
 
 function WaveIcon() {
@@ -331,7 +378,7 @@ function StemMixer({ job }: { job: Job }) {
       <div className="result-heading">
         <div className="success-icon" aria-hidden="true">✓</div>
         <div>
-          <p className="eyebrow success">Separation complete</p>
+          <p className="eyebrow success">{jobEngineLabel(job)} · CPU · Separation complete</p>
           <h2 id="result-heading">Your karaoke mix</h2>
         </div>
       </div>
@@ -418,11 +465,13 @@ function StemMixer({ job }: { job: Job }) {
 }
 
 function ProgressCard({ job }: { job: Job }) {
+  const melbandSelected = job.separator_engine === 'melband_roformer'
   const stages: Array<{ status: JobStatus; label: string }> = job.source_type === 'youtube'
     ? [
         { status: 'queued', label: 'Source received' },
         { status: 'ingesting', label: 'Fetch source' },
         { status: 'validating', label: 'Validate audio' },
+        ...(melbandSelected ? [{ status: 'preparing' as const, label: 'Prepare model' }] : []),
         { status: 'separating', label: 'Separate stems' },
         { status: 'finalizing', label: 'Prepare WAV files' },
         { status: 'completed', label: 'Ready' },
@@ -430,12 +479,12 @@ function ProgressCard({ job }: { job: Job }) {
     : [
         { status: 'queued', label: 'Upload received' },
         { status: 'validating', label: 'Validate audio' },
+        ...(melbandSelected ? [{ status: 'preparing' as const, label: 'Prepare model' }] : []),
         { status: 'separating', label: 'Separate stems' },
         { status: 'finalizing', label: 'Prepare WAV files' },
         { status: 'completed', label: 'Ready' },
       ]
   const currentIndex = stages.findIndex(({ status }) => status === job.status)
-  const qualityName = qualityOptions.find(({ value }) => value === job.quality)?.name
   const passLabel =
     job.status === 'separating' && job.total_passes && job.total_passes > 1
       ? `Model pass ${job.current_pass || 1} of ${job.total_passes}`
@@ -443,22 +492,26 @@ function ProgressCard({ job }: { job: Job }) {
   const progressDetail =
     job.status === 'ingesting'
       ? 'Fetching the best available audio source…'
-      : job.status === 'separating'
-        ? job.eta_seconds !== null && job.progress > 0
-          ? formatEta(job.eta_seconds)
-          : job.progress > 0
-            ? 'Calculating time remaining…'
-            : 'Preparing model and audio…'
-        : job.status === 'finalizing'
-          ? 'Separation complete'
-          : 'Preparing separation…'
+      : job.status === 'preparing'
+        ? job.progress > 0
+          ? 'Verifying or downloading the selected model…'
+          : 'Preparing the selected model…'
+        : job.status === 'separating'
+          ? job.eta_seconds !== null && job.progress > 0
+            ? formatEta(job.eta_seconds)
+            : job.progress > 0
+              ? 'Calculating time remaining…'
+              : 'Starting CPU inference…'
+          : job.status === 'finalizing'
+            ? 'Separation complete'
+            : 'Preparing separation…'
 
   return (
     <section className="progress-card" aria-live="polite">
       <div className="processing-orbit" aria-hidden="true">
         <WaveIcon />
       </div>
-      <p className="eyebrow">{qualityName || 'CPU separation'} · CPU</p>
+      <p className="eyebrow">{jobEngineLabel(job)} · CPU</p>
       <h2>{job.message}</h2>
       <p className="muted">
         {jobDisplayName(job)} · {job.size_bytes > 0 ? formatBytes(job.size_bytes) : 'YouTube source'}
@@ -479,15 +532,16 @@ function ProgressCard({ job }: { job: Job }) {
         <span style={{ width: `${job.progress}%` }} />
       </div>
       <ol className="stage-list">
-        {stages.map((stage, index) => (
-          <li
-            key={stage.status}
-            className={index < currentIndex ? 'done' : index === currentIndex ? 'active' : ''}
-          >
-            <span>{index < currentIndex ? '✓' : index + 1}</span>
-            {stage.label}
-          </li>
-        ))}
+        {stages.map((stage, index) => {
+          const done = index < currentIndex
+          const active = index === currentIndex
+          return (
+            <li key={stage.status} className={done ? 'done' : active ? 'active' : ''}>
+              <span>{done ? '✓' : index + 1}</span>
+              {stage.label}
+            </li>
+          )
+        })}
       </ol>
       <p className="local-note">Keep both terminal windows open while this runs.</p>
     </section>
@@ -520,13 +574,13 @@ function JobHistory({
         {jobs.map((historyJob) => {
           const active = activeStatuses.has(historyJob.status)
           const selected = historyJob.id === currentJobId
-          const qualityName = qualityOptions.find(({ value }) => value === historyJob.quality)?.name
+          const engineLabel = jobEngineLabel(historyJob)
           return (
             <article className={`history-row ${selected ? 'selected' : ''}`} key={historyJob.id}>
               <div className="history-file-icon" aria-hidden="true">♫</div>
               <div className="history-copy">
                 <strong>{historyJob.original_filename}</strong>
-                <small>{qualityName} · {formatJobDate(historyJob.created_at)}</small>
+                <small>{engineLabel} · {formatJobDate(historyJob.created_at)}</small>
               </div>
               <div className={`history-status ${active ? 'active' : historyJob.status}`}>
                 <i />
@@ -559,6 +613,7 @@ function App() {
   const [file, setFile] = useState<File | null>(null)
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [rightsConfirmed, setRightsConfirmed] = useState(false)
+  const [separatorEngine, setSeparatorEngine] = useState<SeparatorEngine>(defaultSeparatorEngine)
   const [quality, setQuality] = useState<SeparationQuality>('preserve')
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -586,7 +641,7 @@ function App() {
       try {
         const response = await fetch(apiUrl('/api/jobs?limit=100'))
         if (!response.ok) throw new Error(await responseError(response))
-        const savedJobs = (await response.json()) as Job[]
+        const savedJobs = (await response.json() as unknown[]).map(normalizeJob)
         if (cancelled) return
         setHistory(savedJobs)
 
@@ -622,7 +677,7 @@ function App() {
       try {
         const response = await fetch(apiUrl(`/api/jobs/${job.id}`))
         if (!response.ok) throw new Error(await responseError(response))
-        const updatedJob = (await response.json()) as Job
+        const updatedJob = normalizeJob(await response.json())
         setJob(updatedJob)
         setHistory((savedJobs) => upsertJob(savedJobs, updatedJob))
       } catch (pollError) {
@@ -653,10 +708,11 @@ function App() {
         body.append('file', file)
         body.append('rights_confirmed', 'true')
         body.append('attestation_version', rightsAttestationVersion)
-        body.append('quality', quality)
+        body.append('quality', separatorEngine === 'melband_roformer' ? 'preserve' : quality)
+        body.append('separator_engine', separatorEngine)
         createdJob = await uploadJob(body, setUploadProgress)
       } else {
-        createdJob = await createYoutubeJob(youtubeUrl.trim(), quality)
+        createdJob = await createYoutubeJob(youtubeUrl.trim(), quality, separatorEngine)
       }
       setJob(createdJob)
       setHistory((savedJobs) => upsertJob(savedJobs, createdJob))
@@ -674,6 +730,7 @@ function App() {
     setFile(null)
     setYoutubeUrl('')
     setRightsConfirmed(false)
+    setSeparatorEngine(defaultSeparatorEngine)
     setQuality('preserve')
     setError('')
     if (inputRef.current) inputRef.current.value = ''
@@ -838,37 +895,79 @@ function App() {
               </div>
             )}
 
-            <fieldset className="quality-picker">
+            <fieldset className="engine-picker">
               <legend>
-                Separation profile
-                <small>Different mixes benefit from different tradeoffs.</small>
+                Separation engine
+                <small>Choose the faster current path or the experimental high-quality model.</small>
               </legend>
-              <div className="quality-options">
-                {qualityOptions.map((option) => (
-                  <label
-                    key={option.value}
-                    className={`quality-option ${quality === option.value ? 'selected' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="quality"
-                      value={option.value}
-                      checked={quality === option.value}
-                      onChange={() => setQuality(option.value)}
-                    />
-                    <span className="radio-mark" aria-hidden="true" />
-                    <span className="quality-copy">
-                      <strong>
-                        {option.name}
-                        {option.recommended && <em>Recommended</em>}
-                      </strong>
-                      <small>{option.description}</small>
-                    </span>
-                    <span className="quality-speed">{option.speed}</span>
-                  </label>
-                ))}
+              <div className="engine-options">
+                <label className={`engine-option ${separatorEngine === 'demucs' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="separator-engine"
+                    value="demucs"
+                    checked={separatorEngine === 'demucs'}
+                    onChange={() => setSeparatorEngine('demucs')}
+                  />
+                  <span className="radio-mark" aria-hidden="true" />
+                  <span className="engine-copy">
+                    <strong>Demucs <em>Current · faster</em></strong>
+                    <small>CPU separation with Natural backing, Best quality, and Strong removal profiles.</small>
+                  </span>
+                </label>
+                <label className={`engine-option ${separatorEngine === 'melband_roformer' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="separator-engine"
+                    value="melband_roformer"
+                    checked={separatorEngine === 'melband_roformer'}
+                    onChange={() => {
+                      setSeparatorEngine('melband_roformer')
+                      setQuality('preserve')
+                    }}
+                  />
+                  <span className="radio-mark" aria-hidden="true" />
+                  <span className="engine-copy">
+                    <strong>High quality · MelBand RoFormer <em>Experimental</em></strong>
+                    <small>CPU-only model with an ~871 MB first download. Runtime varies by track and computer.</small>
+                  </span>
+                </label>
               </div>
             </fieldset>
+
+            {separatorEngine === 'demucs' && (
+              <fieldset className="quality-picker">
+                <legend>
+                  Separation profile
+                  <small>Different mixes benefit from different tradeoffs.</small>
+                </legend>
+                <div className="quality-options">
+                  {qualityOptions.map((option) => (
+                    <label
+                      key={option.value}
+                      className={`quality-option ${quality === option.value ? 'selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="quality"
+                        value={option.value}
+                        checked={quality === option.value}
+                        onChange={() => setQuality(option.value)}
+                      />
+                      <span className="radio-mark" aria-hidden="true" />
+                      <span className="quality-copy">
+                        <strong>
+                          {option.name}
+                          {option.recommended && <em>Recommended</em>}
+                        </strong>
+                        <small>{option.description}</small>
+                      </span>
+                      <span className="quality-speed">{option.speed}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
 
             <label className="rights-check">
               <input

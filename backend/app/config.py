@@ -6,6 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("KARAOKE_DATA_DIR", REPO_ROOT / "data")).resolve()
 JOBS_DIR = DATA_DIR / "jobs"
+MODELS_DIR = Path(os.environ.get("KARAOKE_MODEL_DIR", DATA_DIR / "models")).resolve()
 
 MAX_UPLOAD_BYTES = int(os.environ.get("KARAOKE_MAX_UPLOAD_BYTES", 250 * 1024 * 1024))
 MAX_DURATION_SECONDS = float(os.environ.get("KARAOKE_MAX_DURATION_SECONDS", 20 * 60))

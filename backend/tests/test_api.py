@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
@@ -40,6 +41,8 @@ def test_authorized_upload_creates_a_local_job(monkeypatch, tmp_path) -> None:
     job = response.json()
     assert job["status"] == "queued"
     assert job["quality"] == "preserve"
+    assert job["separator_engine"] == "demucs"
+    assert job["separator_model"] == "htdemucs"
     assert job["original_filename"] == "track.wav"
     assert job["source_type"] == "upload"
     assert job["rights_attestation_version"] == "1"
@@ -100,6 +103,39 @@ def test_authorized_youtube_job_creates_a_queued_job(monkeypatch, tmp_path) -> N
     assert job["video_id"] == "abc123"
     assert job["quality"] == "standard"
     assert submitted == [job["id"]]
+
+
+def test_upload_rejects_melband_with_non_preserve_quality() -> None:
+    response = client.post(
+        "/api/jobs",
+        data={
+            "rights_confirmed": "true",
+            "attestation_version": "1",
+            "quality": "best",
+            "separator_engine": "melband_roformer",
+        },
+        files={"file": ("track.wav", b"fixture", "audio/wav")},
+    )
+
+    assert response.status_code == 422
+    assert "only supports the preserve" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("quality", ["best", "standard"])
+def test_youtube_rejects_melband_with_non_preserve_quality(quality: str) -> None:
+    response = client.post(
+        "/api/jobs/youtube",
+        json={
+            "url": "https://www.youtube.com/watch?v=abc123",
+            "rights_confirmed": True,
+            "attestation_version": "1",
+            "quality": quality,
+            "separator_engine": "melband_roformer",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "only supports the preserve" in response.json()["detail"]
 
 
 def test_upload_rejects_an_unknown_quality_profile() -> None:

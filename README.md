@@ -1,6 +1,6 @@
 # Karaoke Box
 
-A local karaoke-stem studio for source recordings you own or are allowed to use. Choose an audio-file upload or paste an individual YouTube video URL; Karaoke Box validates the local source, separates it into instrumental and vocal stems with Demucs on CPU, and lets you preview the mix and download the instrumental as WAV.
+A local karaoke-stem studio for source recordings you own or are allowed to use. Choose an audio-file upload or paste an individual YouTube video URL; Karaoke Box validates the local source, separates it into instrumental and vocal stems with the selected CPU engine, and lets you preview the mix and download the instrumental as WAV.
 
 Removing vocals does **not** remove copyright or guarantee that a platform will accept an upload without a claim. Fetching media with `yt-dlp` is only a technical ingest step: it grants no license or other rights to download, adapt, or export that media.
 
@@ -11,8 +11,8 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 - React + TypeScript + Vite UI
 - Local FastAPI service bound to `127.0.0.1`
 - FFmpeg/ffprobe media validation
-- CPU-only Demucs two-stem separation
-- Natural, fine-tuned, and strong-removal separation profiles
+- CPU-only two-stem separation with Demucs (default faster/current engine) or optional experimental MelBand RoFormer
+- Natural, fine-tuned, and strong-removal Demucs separation profiles
 - Local filesystem storage under `data/`
 - MP3, WAV, M4A, FLAC, OGG, AAC, and Opus uploads
 - Individual HTTPS YouTube video URL ingest through pinned `yt-dlp`
@@ -22,7 +22,13 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 - Synchronized instrumental/vocal preview
 - Instrumental WAV export
 - pywebview desktop runtime and Windows x64 packaging pipeline
-- CPU-only PyTorch/Demucs packaging; no CUDA build
+- CPU-only PyTorch/Demucs packaging plus the optional MelBand runtime; no CUDA build
+
+## Phase 1C separator status
+
+The selectable Phase 1C implementation is locally complete but remains an **experimental, not production-ready** feature. **Demucs** remains the default faster/current engine with all three existing profiles unchanged. **Kimberley Jensen MelBand RoFormer** is an optional high-quality CPU engine selected by the user. Candidate research found it was the strongest screened option with an explicit MIT checkpoint license and reproducible immutable source. See `docs/SEPARATOR_UPGRADE.md` for measured CPU/RAM results, rejected alternatives, pinned hashes, implementation details, and release gates.
+
+All separator paths remain permanently CPU-only. On first use, the roughly 871 MiB optional checkpoint downloads into the local model cache and is verified against its pinned size and SHA-256; it remains until explicit deletion. The checkpoint is not bundled in the installer. Routine tests mock the engine and downloader rather than fetching weights or performing full inference. Release remains blocked pending permitted-fixture A/B listening, 3/10/20-minute CPU and peak-RAM measurements, frozen Windows x64 worker/package validation, a real permitted song on the target Windows PC, and packaged third-party-notice verification.
 
 ## Source inputs and rights
 
@@ -75,7 +81,7 @@ npm run web
 
 Then open <http://127.0.0.1:5173>.
 
-The first separation downloads the configured Demucs model weights. After that model download, ingested source audio and generated stems remain on this computer. Keep the API terminal open until a job completes. Closing or reloading the browser does not stop a job; closing the API does.
+The first separation with a selected engine downloads its configured model weights. In browser development, model files default to `<KARAOKE_DATA_DIR>/models`; desktop mode sets `KARAOKE_MODEL_DIR` to the platform application model directory. After a model download, ingested source audio, generated stems, and valid model weights remain on this computer. Keep the API terminal open until a job completes. Closing or reloading the browser does not stop a job; closing the API does.
 
 ### Desktop development mode
 
@@ -91,7 +97,7 @@ Run the desktop server/session startup check without opening a window:
 npm run desktop:smoke
 ```
 
-Desktop mode stores jobs and model caches in the operating system's application-data directory. The Windows installer is built by `.github/workflows/windows-desktop.yml`; see `packaging/windows/README.md`.
+Desktop mode stores jobs and model caches in the operating system's application-data directory and sets `KARAOKE_MODEL_DIR` to its `models` directory. The Windows installer is built by `.github/workflows/windows-desktop.yml`; see `packaging/windows/README.md`. The desktop smoke test also launches the separator `--probe` without network access, weights, or inference.
 
 ## Test
 
@@ -99,7 +105,7 @@ Desktop mode stores jobs and model caches in the operating system's application-
 npm test
 ```
 
-The test command runs the Python tests, frontend linter, TypeScript compiler, and Vite production build. It does not run a full Demucs model inference.
+The test command runs the Python tests, frontend linter, TypeScript compiler, and Vite production build. It does not run a full separator-model inference.
 
 ## Local data
 
@@ -109,10 +115,14 @@ Each job is stored in:
 data/jobs/<job-id>/
   job.json
   source.<extension>
-  demucs.log
-  yt-dlp.log        # YouTube jobs only
+  demucs.log                 # Demucs jobs
+  melband-roformer.log       # MelBand jobs
+  yt-dlp.log                 # YouTube jobs only
   instrumental.wav
   vocals.wav
+
+data/models/melband-roformer/kimberley_melband_roformer_v1/
+  MelBandRoformer.ckpt       # valid pinned checkpoint, never auto-deleted
 ```
 
 Using **Process another source** keeps the completed result in **Recent tracks**. Results can be reopened, downloaded, or explicitly deleted there. You can delete all browser-development audio manually by stopping the API and removing `data/`.
@@ -123,7 +133,7 @@ The desktop app stores the equivalent structure under `%LOCALAPPDATA%\Karaoke Bo
 
 The browser stores the selected job ID locally, while the API treats `data/jobs/*/job.json` as the source of truth. On reload, the UI restores that job and resumes one-second status polling. If browser storage was cleared, the UI can still discover an active job and list up to 100 recent jobs from the API.
 
-Processing is independent of the browser, but it is currently hosted inside the local API process. Stopping or restarting the API interrupts Demucs; the interrupted job is marked failed on the next startup because Demucs cannot resume from a mid-song checkpoint. Completed results remain available until explicitly deleted.
+Processing is independent of the browser, but it is currently hosted inside the local API process. Stopping or restarting the API interrupts the selected separator; the interrupted job is marked failed on the next startup because separator inference cannot resume from a mid-song checkpoint. Completed results remain available until explicitly deleted.
 
 ## Configuration
 
@@ -132,6 +142,7 @@ Environment variables for the API:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `KARAOKE_DATA_DIR` | `<repo>/data` | Local job directory |
+| `KARAOKE_MODEL_DIR` | `<KARAOKE_DATA_DIR>/models` in browser mode; platform model directory in desktop mode | Verified separator model cache |
 | `KARAOKE_MAX_UPLOAD_BYTES` | `262144000` | Upload limit in bytes |
 | `KARAOKE_MAX_DURATION_SECONDS` | `1200` | Duration limit |
 | `KARAOKE_DEMUCS_MODEL` | `htdemucs` | Model for Natural and Strong Removal profiles |
@@ -159,9 +170,21 @@ Run `npm run api` and confirm <http://127.0.0.1:8000/api/health> responds.
 
 Run `npm run setup`, then start the API through `npm run api` so it uses `backend/.venv` rather than a global Python installation.
 
+### MelBand model or worker problems
+
+MelBand uses the pinned `kimberley_melband_roformer_v1` checkpoint under `KARAOKE_MODEL_DIR/melband-roformer/`. A final checkpoint is reused only after size and SHA-256 verification; valid weights are not automatically deleted. If separation fails, inspect the job's `melband-roformer.log` for sanitized child diagnostics. The model worker is launched with `python -u -m app.separators.worker`; when the API is started from the repository root with Uvicorn `--app-dir backend`, the runtime supplies `<repo>/backend` as the child working directory because Uvicorn's import path does not propagate to child interpreters. Frozen desktop mode uses `KaraokeBox.exe --internal-separator`.
+
+To run the no-weight/no-network worker probe directly, use:
+
+```bash
+(cd backend && uv run --project backend python -u -m app.separators.worker --probe)
+```
+
+The same probe runs as part of `npm run desktop:smoke`. The probe validates the pinned runtime/configuration and CPU mode without downloading the checkpoint or running inference.
+
 ### Separation is slow
 
-The MVP deliberately uses CPU processing. Runtime varies by model, track length, and machine; a full song can take several minutes. The Best Quality profile runs a bag of fine-tuned models and can take several times longer.
+The MVP deliberately uses CPU processing. Runtime varies by engine, model, track length, and machine; a full song can take several minutes. Demucs Best Quality runs a bag of fine-tuned models and can take several times longer. MelBand is experimental and has not yet passed the required 3-, 10-, and 20-minute CPU/RAM gates.
 
 The UI combines Demucs's processed-audio counters across every model pass. ETA appears once the first audio segment completes and is recalculated from observed CPU speed. It can move up or down as later segments run. A first-time model download happens before measurable inference, so no reliable ETA is shown during that setup.
 
@@ -175,7 +198,7 @@ Use the least-compressed source you are authorized to process. For file uploads,
 
 ### Processing fails
 
-The UI displays the final error. More detail is retained in the job's `demucs.log` file under `data/jobs/<job-id>/` in browser-development mode or the platform application-data directory in desktop mode.
+The UI displays the final error. Demucs details are retained in `demucs.log`; MelBand details are retained in `melband-roformer.log`; YouTube diagnostics are retained in `yt-dlp.log`. These files are under `data/jobs/<job-id>/` in browser-development mode or the platform application-data directory in desktop mode. A model-cache verification or download error is sanitized before it reaches the UI.
 
 ## Repository layout
 
@@ -183,8 +206,10 @@ The UI displays the final error. More detail is retained in the job's `demucs.lo
 backend/              FastAPI, Demucs processor, and desktop launcher
 web/                  React + TypeScript + Vite frontend
 packaging/windows/    PyInstaller and Inno Setup configuration
-docs/PLAN.md          Product and implementation roadmap
-docs/DESKTOP.md       Primary Windows packaging architecture
-docs/DEPLOYMENT.md    Optional hosted architecture
+docs/PLAN.md               Product and implementation roadmap
+docs/DESKTOP.md            Primary Windows packaging architecture
+docs/SEPARATOR_UPGRADE.md          Current separator implementation design and research
+docs/SEPARATOR_SUBAGENT_PROMPTS.md  Directed implementation worker prompts
+docs/DEPLOYMENT.md                 Optional hosted architecture
 data/                 Generated local files (gitignored)
 ```

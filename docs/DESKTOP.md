@@ -12,7 +12,7 @@ Karaoke Box.exe
   |-- local job worker process
   |-- pinned yt-dlp YouTube ingest
   |-- FFmpeg/ffprobe executables
-  |-- Demucs + CPU-only PyTorch
+  |-- Demucs default + optional experimental MelBand RoFormer + CPU-only PyTorch
   |-- JSON job metadata
   +-- persistent files in %LOCALAPPDATA%\Karaoke Box\
 ```
@@ -38,7 +38,7 @@ The application is permanently CPU-only. It always invokes Demucs with `--device
 2. It starts FastAPI in the background, bound only to `127.0.0.1`.
 3. It opens a pywebview window pointing at the local application URL.
 4. The React application uses the existing HTTP job API and polling.
-5. Demucs runs in a separate child process so inference cannot freeze the UI.
+5. The selected separator runs in a separate child process so inference cannot freeze the UI. In development, the MelBand child keeps `python -u -m app.separators.worker` and runs with the repository's `backend` directory as cwd; this is required because Uvicorn's `--app-dir backend` import path does not propagate to child interpreters.
 6. Closing the window prompts when processing is active. The first version may either cancel/mark interrupted or remain in the system tray.
 7. On a clean exit, the API and its child process tree shut down.
 
@@ -56,15 +56,16 @@ Use `platformdirs` rather than repository-relative paths.
     job.json
     source.<extension>
     demucs.log
+    melband-roformer.log
     yt-dlp.log
     instrumental.wav
     vocals.wav
   logs\
 ```
 
-Per-job JSON stores metadata, progress, and history. Audio remains ordinary files so FFmpeg and Demucs can stream it efficiently.
+Per-job JSON stores metadata, progress, and history. Audio remains ordinary files so FFmpeg and the selected separator can stream it efficiently.
 
-There is no automatic media expiration in the desktop application. Sources, results, and models remain until the user explicitly deletes an individual job or uses a future **Clear local data** setting. Temporary Demucs working directories are still removed after each successful job. Before accepting a job, the app should verify that sufficient disk space is available.
+There is no automatic media expiration in the desktop application. Sources, results, and models remain until the user explicitly deletes an individual job or uses a future **Clear local data** setting. Temporary separator working directories are still removed after each successful job. Before accepting a job, the app should verify that sufficient disk space is available.
 
 ## Packaging strategy
 
@@ -82,9 +83,10 @@ The packaged launcher needs special worker entry points. In a frozen app, `sys.e
 ```text
 Karaoke Box.exe --internal-demucs <demucs arguments>
 Karaoke Box.exe --internal-ytdlp <yt-dlp arguments>
+Karaoke Box.exe --internal-separator <separator-worker arguments>
 ```
 
-Development continues to use Python module commands; the processor and YouTube ingest adapter choose the correct command through runtime adapters.
+Development continues to use Python module commands. The MelBand adapter keeps `python -u -m app.separators.worker` and supplies `<repo>/backend` as cwd so the child can import `app` under the documented repository-root Uvicorn launch. Frozen mode uses the private separator command above. The generic separator entry point is reserved for the narrow CPU-only MelBand worker; existing Demucs and yt-dlp dispatch paths remain unchanged.
 
 ### Frontend
 
@@ -110,14 +112,25 @@ Public distribution eventually needs Authenticode code signing. Unsigned PyInsta
 
 Do not embed every model in the initial installer.
 
-- Include enough metadata to show model size and availability.
-- Download the selected Demucs weights on first use with visible progress.
-- Store weights under the application model directory by setting `TORCH_HOME`/related cache configuration.
-- Verify expected file checksum after download.
-- Offer a settings action to remove cached models.
-- Optionally bundle the default model later if offline installation is required.
+- Include enough metadata to show engine/model name, size, availability, and expected CPU cost.
+- Download selected separator weights on first use with visible progress.
+- Store weights under the application model directory (`KARAOKE_MODEL_DIR`), using engine-specific cache subdirectories.
+- Verify expected byte size and full SHA-256 before atomic installation.
+- Retain valid cached models until explicit deletion.
+- Offer a settings action to remove cached models in a later batch.
+- The Phase 1C checkpoint is never bundled; the packaged artifact includes only the pinned YAML, provenance, and MIT notice.
+- The no-weight/no-network separator probe runs during desktop smoke and does not download or infer.
+- Optionally bundle a default model later only if offline installation becomes a requirement.
 
-The Best Quality profile uses multiple model weights and significantly increases both download size and CPU runtime.
+Phase 1C implements the explicitly MIT-licensed Kimberley Jensen MelBand RoFormer checkpoint as an optional experimental engine. Store it at:
+
+```text
+%LOCALAPPDATA%\Karaoke Box\models\melband-roformer\kimberley_melband_roformer_v1\MelBandRoformer.ckpt
+```
+
+The expected file is 913106900 bytes with SHA-256 `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e`. The installer must not contain the checkpoint. Do not add the broad `audio-separator` package; use only the narrow pinned MIT runtime described in `docs/SEPARATOR_UPGRADE.md`, because the package adds unnecessary dependencies including CC BY-NC code.
+
+Demucs remains the default faster/current engine and all existing profile semantics remain unchanged. Do not add CUDA, MPS, or DirectML. Current Best Quality already uses multiple Demucs weights and significantly increases download size and CPU runtime.
 
 ## Windows build pipeline
 
@@ -133,7 +146,7 @@ Windows artifacts cannot be produced reliably from macOS. Add a GitHub Actions w
 8. Build the Inno Setup installer.
 9. Upload both the unpacked application and installer as workflow artifacts.
 
-A Windows machine should then test:
+A Windows machine must still test the implementation before release:
 
 - clean install and uninstall,
 - startup without developer tools or Python installed,
@@ -145,7 +158,9 @@ A Windows machine should then test:
 - sleep/wake behavior,
 - explicit job deletion and locked-file error handling,
 - Windows Defender/SmartScreen behavior,
-- CPU usage, peak RAM, scratch disk, and runtime for each quality profile.
+- CPU usage, peak RAM, scratch disk, and runtime for each separator engine/profile.
+
+MelBand remains experimental and is not production-ready. Release gates are permitted-fixture A/B listening; 3-, 10-, and 20-minute CPU-time and peak-RAM measurements; frozen Windows x64 worker/package validation; a real permitted song on the target Windows PC; and verification that packaged third-party notices are present.
 
 ## Migration from the current app
 
@@ -158,6 +173,7 @@ A Windows machine should then test:
 7. Add session-token protection for the loopback API.
 8. Create the PyInstaller spec and GitHub Actions Windows build.
 9. Create the Inno Setup installer and test it on clean Windows.
+10. Phase 1C implements the frozen generic separator worker/probe and optional verified MelBand model cache without bundling its weights; frozen Windows validation remains pending.
 
 ## Optional hosted future
 

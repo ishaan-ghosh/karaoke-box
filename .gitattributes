@@ -1,0 +1,2 @@
+# Preserve the pinned benchmark config's CRLF bytes for its exact SHA-256 checksum.
+backend/app/separators/models/vocals_mel_band_roformer.yaml -text whitespace=cr-at-eol

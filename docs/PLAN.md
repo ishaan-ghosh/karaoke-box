@@ -82,7 +82,7 @@ Do not label outputs “copyright-free” unless their rights actually establish
 - **FastAPI** accepts multipart file uploads and YouTube URL submissions, and exposes job status/assets.
 - **yt-dlp** fetches a submitted YouTube video's best available audio source, preferring audio-only formats, into controlled job storage.
 - **FFmpeg/ffprobe** validates either kind of source and reads its duration.
-- **Demucs** performs two-stem separation with `--device cpu`.
+- **Demucs** remains the default faster/current two-stem engine with `--device cpu`; the optional experimental MelBand RoFormer engine uses the same CPU-only boundary.
 - A single-thread executor serializes source ingest and expensive CPU jobs.
 - Source files, provenance metadata, logs, and WAV stems are stored under local `data/jobs/`.
 
@@ -105,14 +105,14 @@ The local MVP has no account, database, Redis, Docker, cloud storage, or GPU wor
 Karaoke Box.exe
   |-- pywebview window --> compiled React/Vite assets
   |-- loopback FastAPI --> JSON job metadata
-  +-- Demucs subprocess --> local media/model directories
+  +-- selected separator subprocess --> local media/model directories
 ```
 
 - **pywebview** provides a native Windows window backed by Edge WebView2.
 - **FastAPI** serves both the compiled frontend and local API on a random loopback port protected by a per-launch token.
 - **JSON job files** store durable local job history, source provenance, and attestations without adding a database dependency.
 - **Local files** under `%LOCALAPPDATA%\Karaoke Box` store uploaded or fetched sources, stems, logs, and model weights.
-- **yt-dlp** performs a controlled network fetch for YouTube jobs; **Demucs** then runs in a separate child process with one CPU job at a time.
+- **yt-dlp** performs a controlled network fetch for YouTube jobs; the selected separator then runs in a separate child process with one CPU job at a time. Demucs is the default faster/current engine; MelBand RoFormer is optional and experimental.
 - Jobs and model files persist until the user explicitly deletes them.
 - **PyInstaller onedir + Inno Setup** produces the Windows x64 installer through a Windows GitHub Actions runner.
 
@@ -134,7 +134,7 @@ Each job has a UUID directory and a `job.json` file containing:
 - error details when ingest or processing fails,
 - creation, fetch, and update timestamps as applicable.
 
-Job directories retain the uploaded or fetched source. Completed jobs also contain `instrumental.wav`, `vocals.wav`, and `demucs.log`; URL jobs may additionally retain a sanitized `yt-dlp` diagnostic log.
+Job directories retain the uploaded or fetched source. Completed jobs also contain `instrumental.wav`, `vocals.wav`, and the engine-specific `demucs.log` or `melband-roformer.log`; URL jobs may additionally retain a sanitized `yt-dlp` diagnostic log. Verified MelBand weights live under the platform model directory (`KARAOKE_MODEL_DIR` in desktop mode), not in a job directory.
 
 For the Windows application, the same domain model moves behind repository/storage interfaces:
 
@@ -168,10 +168,10 @@ The YouTube route accepts JSON containing one HTTPS video URL. It creates a job 
    - **File:** enforce the upload extension allowlist and 250 MB streaming limit while writing to the job directory.
    - **YouTube:** validate an individual video URL, use `yt-dlp` to resolve the canonical video ID/uploader metadata, and fetch the best available audio source—preferring audio-only formats—into controlled scratch storage. Apply metadata preflight checks when available and abort a download that exceeds the byte limit.
 3. Validate the resulting local media with `ffprobe`; require an audio stream and a measured duration no longer than 20 minutes. `yt-dlp` metadata is provenance and preflight data, not a substitute for this validation.
-4. Feed the validated source through the same FFmpeg/Demucs path regardless of origin. Run the selected CPU profile: subtractive `htdemucs`, subtractive fine-tuned `htdemucs_ft`, or summed-stem `htdemucs`.
+4. Feed the validated source through the same source-neutral adapter pipeline regardless of origin. Run the selected CPU engine: Demucs profiles are subtractive `htdemucs`, subtractive fine-tuned `htdemucs_ft`, or summed-stem `htdemucs`; optional MelBand RoFormer is a preserve/residual experimental path.
 5. Move full-quality `vocals.wav` and the selected accompaniment result into stable job assets.
 6. Preview both stems in sync and offer the instrumental as a WAV download.
-7. Retain local Demucs and sanitized ingest diagnostics for troubleshooting, plus the provenance needed by the future rights manifest.
+7. Retain local selected-separator and sanitized ingest diagnostics for troubleshooting, plus the provenance needed by the future rights manifest.
 
 Separation quality will vary. Backing vocals, reverb, and centered instruments may leak between stems. YouTube's available audio may already be lossily encoded. The UI should present separation as an assistive tool, not perfect removal, and must not imply that successful ingest changes the source's rights status.
 
@@ -218,6 +218,24 @@ Separation quality will vary. Backing vocals, reverb, and centered instruments m
 
 **Source-ingest MVP checkpoint:** a user-attested file upload or YouTube video URL becomes playable vocal/instrumental stems through the same validated separation pipeline.
 
+### Phase 1C — selectable MelBand RoFormer separator (locally implemented, experimental)
+
+Research, implementation, and routine local validation are complete. Kimberley Jensen MelBand RoFormer is available as an optional experimental high-quality engine because it was the strongest screened candidate with an explicit MIT checkpoint license and immutable source/checksum. Demucs remains the default faster/current engine and all existing profiles remain unchanged. BS-RoFormer Viperx and the screened MDX/MDX23C checkpoints were rejected for unclear weight licensing, insufficient quality improvement, or unacceptable CPU/RAM cost. The full record, implementation contract, and pending release gates are in `docs/SEPARATOR_UPGRADE.md`.
+
+Implementation scope completed:
+
+- Retain Demucs as the default clearly labeled faster/current engine and do not change `preserve`, `best`, or `standard` semantics.
+- Implement the exact engine/model fields, adapter registry, narrow pinned CPU worker, verified atomic model cache, progress protocol, API validation, UI engine selector, and backward-compatible job restoration specified in the design document.
+- Vendor only the required MIT RoFormer implementation. Do not add `audio-separator`, `diffq`, `librosa`, ONNX Runtime, CUDA, MPS, or DirectML.
+- Preserve the stable `instrumental.wav`/`vocals.wav` contract, single-worker serialization, loopback/session security, and existing frozen Demucs/yt-dlp adapters.
+- Store the optional 913106900-byte checkpoint under the platform model directory, verify SHA-256 `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e`, and retain it until explicit deletion.
+- Add mocked engine/API/cache/progress/worker tests and short self-created array tests. Routine CI must not download the checkpoint or run full inference.
+- Run `npm test` and `npm run desktop:smoke`. Do not dispatch Windows packaging without explicit user approval.
+
+Release gates remain explicit: permitted-fixture A/B listening; 3-, 10-, and 20-minute CPU-time and peak-RAM measurements; frozen Windows x64 worker/package validation; a real permitted song on the target Windows PC; and verification that packaged third-party notices are present. MelBand is not production-ready until these gates pass.
+
+**Separator-upgrade checkpoint:** users can choose the existing faster Demucs engine or the experimental MelBand RoFormer engine, with durable exact model metadata and the same preview/download outputs.
+
 ### Phase 2 — desktop runtime
 
 - Serve the compiled Vite build from FastAPI.
@@ -228,8 +246,8 @@ Separation quality will vary. Backing vocals, reverb, and centered instruments m
 
 ### Phase 3 — Windows package
 
-- Add a PyInstaller onedir spec with CPU-only PyTorch, Demucs, `yt-dlp`, frontend assets, and bundled FFmpeg tools.
-- Add a GitHub Actions Windows build and packaged startup smoke test that verifies all required commands without fetching live media.
+- Maintain the PyInstaller onedir spec with CPU-only PyTorch, Demucs, optional MelBand runtime, `yt-dlp`, frontend assets, and bundled FFmpeg tools; do not bundle the MelBand checkpoint.
+- Add or run the GitHub Actions Windows build and packaged startup smoke test to verify all required commands without fetching live media or model weights; Phase 1C's no-weight/no-network probe is already part of desktop smoke.
 - Create an Inno Setup per-user installer with WebView2 detection/bootstrap.
 - Test on clean Windows 10/11 x64, including Unicode paths, Defender behavior, network failures, sleep/wake, and uninstall/upgrade.
 - Add Authenticode signing before broad public distribution.
@@ -268,9 +286,13 @@ Separation quality will vary. Backing vocals, reverb, and centered instruments m
 7. React + TypeScript + Vite UI with Python/FastAPI, pywebview, JSON job metadata, and separate `yt-dlp`/Demucs child-process adapters.
 8. CPU-only PyTorch permanently; no CUDA distribution.
 9. PyInstaller onedir plus Inno Setup, built by GitHub Actions on Windows.
+10. The optional Phase 1C implementation is the MIT-licensed Kimberley Jensen MelBand RoFormer checkpoint pinned in `docs/SEPARATOR_UPGRADE.md`; it remains experimental and Demucs remains the default faster/current choice.
+11. Do not depend on the broad `audio-separator` package. Use a narrow pinned MIT worker so non-commercial and unnecessary runtime dependencies do not enter the desktop distribution.
 
 ## 12. Current implementation checkpoint
 
-The file-upload and YouTube source vertical slices are implemented: both require the shared versioned attestation; YouTube jobs validate an individual HTTPS URL, resolve bounded provenance, preflight duration/size, fetch audio-only media with fixed pinned `yt-dlp` options, retain sanitized diagnostics, and hand the source to the existing FFprobe/CPU Demucs pipeline. Both paths include byte/status progress, reload-safe polling and active-job restoration, local result history, synchronized stem playback, level controls, explicit cleanup, and instrumental WAV download. The desktop runtime and Windows packaging adapters include the `yt-dlp` worker entry point.
+The file-upload and YouTube source vertical slices are implemented: both require the shared versioned attestation; YouTube jobs validate an individual HTTPS URL, resolve bounded provenance, preflight duration/size, fetch the best available audio source with fixed pinned `yt-dlp` options, retain sanitized diagnostics, and hand the source to the source-neutral FFprobe/selected-separator pipeline. Both paths include byte/status progress, reload-safe polling and active-job restoration, local result history, synchronized stem playback, level controls, explicit cleanup, and instrumental WAV download. The desktop runtime and Windows packaging adapters include the `yt-dlp` and generic separator worker entry points.
 
-The next checkpoint is to test several permitted sources end to end and record runtime/memory on the target Windows hardware. Routine CI remains mocked and must not depend on a live third-party YouTube video.
+Phase 1C implementation is locally complete and verified by 54 backend tests, frontend lint/build, and desktop smoke. The optional MelBand engine remains experimental and not production-ready. The checkpoint source, revision, expected size, SHA-256, MIT license record, measured CPU/RAM results, rejected alternatives, adapter boundary, worker protocol, model-cache behavior, API fields, UI behavior, tests, and packaging probe are recorded in `docs/SEPARATOR_UPGRADE.md`. The bounded Luna implementation and Sol review instructions are in `docs/SEPARATOR_SUBAGENT_PROMPTS.md`.
+
+Routine CI remains mocked and must not depend on live third-party YouTube media, large model downloads, or full separator inference. Release remains gated by permitted-fixture A/B listening, 3/10/20-minute CPU and peak-RAM measurements, frozen Windows x64 worker/package validation, a real permitted song on the target Windows PC, and packaged third-party-notice verification.

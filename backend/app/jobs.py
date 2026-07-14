@@ -9,18 +9,32 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from .processor import ProcessingError, process_job
 from .profiles import DEFAULT_QUALITY, SeparationQuality
+from .separators.catalog import (
+    DEFAULT_SEPARATOR_ENGINE,
+    MELBAND_ROFORMER_ENGINE,
+    ResolvedSelection,
+    SeparatorEngine,
+    resolve_selection,
+)
 from .rights import RIGHTS_ATTESTATION_TEXT, RIGHTS_ATTESTATION_VERSION
 from .youtube import ingest_youtube_job
 
 SourceType = Literal["upload", "youtube"]
 JobStatus = Literal[
-    "queued", "ingesting", "validating", "separating", "finalizing", "completed", "failed"
+    "queued",
+    "ingesting",
+    "preparing",
+    "validating",
+    "separating",
+    "finalizing",
+    "completed",
+    "failed",
 ]
-ACTIVE_STATUSES = {"queued", "ingesting", "validating", "separating", "finalizing"}
+ACTIVE_STATUSES = {"queued", "ingesting", "preparing", "validating", "separating", "finalizing"}
 
 
 def utc_now() -> str:
@@ -55,8 +69,29 @@ class Job(BaseModel):
     total_passes: int | None = None
     error: str | None = None
     quality: SeparationQuality = DEFAULT_QUALITY
+    separator_engine: SeparatorEngine = DEFAULT_SEPARATOR_ENGINE
+    separator_model: str
     created_at: str
     updated_at: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_separator_selection(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        migrated = dict(values)
+        quality = migrated.get("quality", DEFAULT_QUALITY)
+        engine = migrated.get("separator_engine", DEFAULT_SEPARATOR_ENGINE)
+        selection: ResolvedSelection = resolve_selection(engine, quality)
+        migrated.setdefault("separator_engine", selection.separator_engine)
+        if (
+            selection.separator_engine == MELBAND_ROFORMER_ENGINE
+            and migrated.get("separator_model", selection.separator_model)
+            != selection.separator_model
+        ):
+            raise ValueError("The MelBand RoFormer model ID is not supported.")
+        migrated.setdefault("separator_model", selection.separator_model)
+        return migrated
 
 
 class JobStore:
@@ -83,7 +118,13 @@ class JobStore:
         canonical_url: str | None = None,
         video_id: str | None = None,
         rights_confirmed_at: str | None = None,
+        separator_engine: SeparatorEngine = DEFAULT_SEPARATOR_ENGINE,
+        separator_model: str | None = None,
     ) -> Job:
+        selection = resolve_selection(separator_engine, quality)
+        if separator_model is not None and separator_model != selection.separator_model:
+            raise ValueError("The separator model does not match the selected engine/profile.")
+
         now = utc_now()
         job = Job(
             id=str(uuid4()),
@@ -95,7 +136,9 @@ class JobStore:
             video_id=video_id,
             rights_confirmed_at=rights_confirmed_at or now,
             size_bytes=size_bytes,
-            quality=quality,
+            quality=selection.quality,
+            separator_engine=selection.separator_engine,
+            separator_model=selection.separator_model,
             created_at=now,
             updated_at=now,
         )
@@ -201,6 +244,8 @@ class JobManager:
                 source_filename,
                 update,
                 quality=job.quality,
+                separator_engine=job.separator_engine,
+                separator_model=job.separator_model,
             )
         except (ProcessingError, OSError, subprocess.SubprocessError) as exc:
             failed_job = self.store.get(job.id)

@@ -18,5 +18,9 @@ web/dist/
 # Desktop packaging
 build/
 dist/
+dist-installer/
 packaging/windows/build-tools/
+
+# Local subagent orchestration output
+.pi-subagents/
 packaging/windows/Output/

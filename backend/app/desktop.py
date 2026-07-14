@@ -5,6 +5,7 @@ import http.cookiejar
 import os
 import secrets
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -60,6 +61,13 @@ def _run_internal_ytdlp(arguments: list[str]) -> int:
     return int(result or 0)
 
 
+def _run_internal_separator(arguments: list[str]) -> int:
+    _ensure_internal_stdio()
+    from .separators.worker import main as separator_main
+
+    return int(separator_main(arguments) or 0)
+
+
 def _configure_desktop_environment() -> Path:
     from platformdirs import user_data_path
 
@@ -69,6 +77,7 @@ def _configure_desktop_environment() -> Path:
     model_root.mkdir(parents=True, exist_ok=True)
 
     os.environ.setdefault("KARAOKE_DATA_DIR", str(data_root))
+    os.environ.setdefault("KARAOKE_MODEL_DIR", str(model_root))
     os.environ.setdefault("KARAOKE_DESKTOP_LOG", str(data_root / "logs" / "desktop.log"))
     os.environ.setdefault("TORCH_HOME", str(model_root / "torch"))
     os.environ.setdefault("HF_HOME", str(model_root / "huggingface"))
@@ -124,6 +133,22 @@ def _wait_until_ready(base_url: str, timeout: float = 20) -> None:
     raise RuntimeError("The local Karaoke Box service did not start in time.")
 
 
+def _run_separator_probe() -> None:
+    from .runtime import separator_worker_command, separator_worker_cwd
+
+    command = [*separator_worker_command(), "--probe"]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=separator_worker_cwd(),
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "separator probe failed").strip()
+        raise RuntimeError(f"Separator worker probe failed: {detail[-800:]}")
+
+
 def _smoke_test(base_url: str, token: str) -> int:
     cookies = http.cookiejar.CookieJar()
     browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
@@ -131,6 +156,7 @@ def _smoke_test(base_url: str, token: str) -> int:
     with browser.open(f"{base_url}/api/health", timeout=5) as response:
         if response.status != 200:
             raise RuntimeError(f"Desktop health check returned {response.status}.")
+    _run_separator_probe()
     return 0
 
 
@@ -199,6 +225,8 @@ def main(arguments: list[str] | None = None) -> int:
         return _run_internal_demucs(arguments[1:])
     if arguments and arguments[0] == "--internal-ytdlp":
         return _run_internal_ytdlp(arguments[1:])
+    if arguments and arguments[0] == "--internal-separator":
+        return _run_internal_separator(arguments[1:])
 
     parser = argparse.ArgumentParser(description="Karaoke Box desktop application")
     parser.add_argument(

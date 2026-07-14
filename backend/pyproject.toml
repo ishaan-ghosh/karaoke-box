@@ -4,10 +4,13 @@ version = "0.1.0"
 description = "Local audio separation API for Karaoke Box"
 requires-python = ">=3.10,<3.13"
 dependencies = [
+  "beartype>=0.18.5,<0.19",
   "demucs>=4.0.1,<5",
+  "einops>=0.8,<0.9",
   "fastapi>=0.116,<1",
   "numpy>=1.26,<2",
   "python-multipart>=0.0.20,<1",
+  "rotary-embedding-torch>=0.6.5,<0.7",
   "uvicorn[standard]>=0.35,<1",
   "yt-dlp==2026.7.4",
 ]

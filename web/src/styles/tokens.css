@@ -1,81 +1,69 @@
 /* ============================================================
-   Karaoke Box — "Neon Lounge" design tokens
-   Single source of truth for color, type, space, shape, motion.
-   Every value the app paints with lives here (spec §2.1–2.5).
+   KARAOKE BOX · DECK-01 — design tokens
+   A 1970s Japanese hi-fi karaoke deck: graphite chassis,
+   cream silkscreen, mint VFD phosphor, amber VU needles.
+   Every color in the app derives from these tokens.
    ============================================================ */
 
 :root {
-  /* ---- room ---------------------------------------------- */
-  --bg-0: #0f0b09;                         /* page — warm black */
-  --bg-glow-neon: rgba(255, 61, 99, 0.10); /* upper-right wash */
-  --bg-glow-gold: rgba(242, 177, 62, 0.05);/* mid-left wash */
+  /* — chassis (cool graphite metal) — */
+  --chassis-0: #0e0f11;               /* the room behind the deck */
+  --chassis-1: #15171a;               /* deck face */
+  --chassis-2: #1c1f23;               /* module panel */
+  --chassis-3: #24282d;               /* raised / hover */
+  --seam: #2b3036;                    /* panel seam hairline */
+  --seam-strong: #3f464e;             /* emphasized edge */
 
-  /* ---- surfaces (layered wood-dark panels) --------------- */
-  --surface-1: #191310;   /* cards */
-  --surface-2: #221a15;   /* raised wells, inputs */
-  --surface-3: #2b211a;   /* hover / selected fills */
-  --line-1: #33291f;      /* hairline */
-  --line-2: #4d3d2e;      /* strong border / hover */
+  /* — silkscreen (printed labels on the metal) — */
+  --silkscreen: #ebe6d8;
+  --silkscreen-dim: #a49f92;
+  --silkscreen-faint: #6b675c;
 
-  /* ---- ink ----------------------------------------------- */
-  --ink: #f7efe3;
-  --ink-muted: #a89a89;
-  --ink-faint: #71655a;
+  /* — VFD phosphor (readouts, primary signal) — */
+  --vfd: #63f2c5;
+  --vfd-hot: #9cffdf;
+  --vfd-dim: color-mix(in srgb, var(--vfd) 16%, transparent);
+  --vfd-glow: color-mix(in srgb, var(--vfd) 45%, transparent);
+  --vfd-ghost: color-mix(in srgb, var(--vfd) 7%, transparent);
+  --vfd-well: #0a1512;                /* glass behind the phosphor */
+  --on-vfd: #062018;
 
-  /* ---- neon — primary accent (signage pink-red) ---------- */
-  --neon: #ff3d63;
-  --neon-hot: #ff6584;                    /* hover */
-  --neon-dim: rgba(255, 61, 99, 0.14);
-  --neon-glow: rgba(255, 61, 99, 0.40);   /* text/box-shadow blooms */
-  --on-neon: #1c0910;                     /* text on neon fills */
+  /* — amber (VU meters, arming, warnings) — */
+  --amber: #ffb454;
+  --amber-dim: color-mix(in srgb, var(--amber) 15%, transparent);
+  --amber-glow: color-mix(in srgb, var(--amber) 40%, transparent);
+  --on-amber: #251302;
 
-  /* ---- gold — secondary accent (VU meters, "ready") ------ */
-  --gold: #f2b13e;
-  --gold-dim: rgba(242, 177, 62, 0.14);
-  --gold-glow: rgba(242, 177, 62, 0.35);
-  --on-gold: #201505;
+  /* — LEDs — */
+  --led-red: #ff5148;
+  --led-red-dim: color-mix(in srgb, var(--led-red) 14%, transparent);
+  --led-green: #59e08a;
+  --led-green-dim: color-mix(in srgb, var(--led-green) 14%, transparent);
 
-  /* ---- status -------------------------------------------- */
-  --led-green: #7cd992;                   /* "Local only" LED only */
-  --danger: #e06055;
-  --danger-dim: rgba(224, 96, 85, 0.13);
-  --warn: #d9a05b;
-  --warn-dim: rgba(217, 160, 91, 0.12);
-
-  /* ---- typography (bundled via fontsource, offline) ------ */
-  --font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
-  --font-serif: 'Instrument Serif', Georgia, serif;
+  /* — type — */
+  --font-panel: 'Archivo Variable', 'Avenir Next', system-ui, sans-serif;
+  --font-vfd: 'Doto Variable', 'Spline Sans Mono Variable', monospace;
   --font-mono: 'Spline Sans Mono Variable', ui-monospace, monospace;
 
-  /* ---- spacing scale ------------------------------------- */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 72px;
+  /* — space — */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
 
-  /* ---- radius -------------------------------------------- */
-  --r-sm: 8px;    /* chips, inputs */
-  --r-md: 12px;   /* controls, wells */
-  --r-lg: 20px;   /* cards */
+  /* — shape — */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
   --r-pill: 999px;
 
-  /* ---- elevation ----------------------------------------- */
-  --shadow-card: 0 30px 90px rgba(0, 0, 0, 0.45);
-  --well-inset: inset 0 1px 0 rgba(0, 0, 0, 0.4);
-  --card-topline: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.14),
-    transparent
-  );
+  /* — elevation / machining — */
+  --bevel-top: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --bevel-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+  --well-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(0, 0, 0, 0.6);
+  --module-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 30px rgba(0, 0, 0, 0.35);
 
-  /* ---- motion (spec §2.5) -------------------------------- */
+  /* — motion — */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --dur-fast: 140ms;   /* hover / press */
-  --dur-med: 320ms;    /* state changes */
-  --dur-slow: 700ms;   /* view entrances */
+  --dur-fast: 140ms;
+  --dur-med: 320ms;
+  --dur-slow: 700ms;
 }

@@ -132,6 +132,15 @@ export function HouseIcon({ size = 24, ...props }: IconProps) {
   )
 }
 
+export function EjectIcon({ size = 24, ...props }: IconProps) {
+  return (
+    <SolidIcon size={size} {...props}>
+      <path d="M12 4.5 20 14H4l8-9.5Z" />
+      <rect x="4" y="16.5" width="16" height="3" rx="1.5" />
+    </SolidIcon>
+  )
+}
+
 export function ShieldIcon({ size = 24, ...props }: IconProps) {
   return (
     <LineIcon size={size} {...props}>

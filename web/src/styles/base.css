@@ -1,62 +1,35 @@
 /* ============================================================
-   Karaoke Box — base layer
-   Reset · body type · the "room" atmosphere · grain · shared
-   keyframes · the Eq motif · focus ring · reduced-motion switch.
-   Imported after tokens.css, before App.css (see main.tsx).
+   DECK-01 — base: reset, machine textures, shared keyframes
    ============================================================ */
 
-/* ---- reset --------------------------------------------------- */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html {
   min-width: 320px;
-  background: var(--bg-0);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background: var(--chassis-0);
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  font-family: var(--font-display);
-  font-size: 15px;
-  line-height: 1.7;
-  font-weight: 400;
-  color: var(--ink);
-  background: var(--bg-0);
+  color: var(--silkscreen);
+  font-family: var(--font-panel);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+/* The deck fills the window on wide screens; the room never scrolls. */
+@media (min-width: 981px) {
+  html, body, #root { height: 100%; }
+  body { overflow: hidden; }
 }
 
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
-}
-
-button {
-  color: inherit;
-}
-
-svg {
-  display: block;
-}
-
-code {
-  font-family: var(--font-mono);
-  font-size: 0.86em;
-}
+button, input { font: inherit; color: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+code { font-family: var(--font-mono); font-size: 0.92em; }
 
 .sr-only {
   position: absolute;
@@ -70,213 +43,143 @@ code {
   border: 0;
 }
 
-/* ---- the room: atmosphere layers ----------------------------- */
-/* A fixed, non-interactive stack behind everything:
-   ::before  = two huge radial washes (neon UR, gold ML) drifting
-   ::after   = static SVG feTurbulence grain, overlay-blended        */
-.app-shell {
-  position: relative;
-  min-height: 100vh;
-  isolation: isolate;
-  overflow-x: clip;
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--vfd);
+  outline-offset: 2px;
 }
 
-.app-shell::before,
-.app-shell::after {
+::selection {
+  background: color-mix(in srgb, var(--vfd) 30%, transparent);
+  color: var(--silkscreen);
+}
+
+/* dark machined scrollbars (rails scroll internally) */
+* { scrollbar-width: thin; scrollbar-color: var(--seam-strong) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--seam-strong);
+  border-radius: var(--r-pill);
+  border: 2px solid var(--chassis-1);
+}
+
+/* ---- machine textures ------------------------------------- */
+
+/* brushed metal: faint vertical striations + grain */
+.brushed {
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.014) 0 1px,
+      transparent 1px 3px
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* corner screws — applied to elements with .screws */
+.screws::before,
+.screws::after {
   content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
+  position: absolute;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0 45%, rgba(0, 0, 0, 0.7) 55% 100%),
+    var(--chassis-3);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
+.screws::before { top: 9px; left: 9px; }
+.screws::after { top: 9px; right: 9px; }
 
-.app-shell::before {
-  background:
-    radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
-    radial-gradient(56rem 52rem at 6% 54%, var(--bg-glow-gold), transparent 62%);
-  animation: atmosphere-drift 90s ease-in-out infinite alternate;
+/* ---- shared keyframes -------------------------------------- */
+
+@keyframes platter-spin {
+  to { transform: rotate(360deg); }
 }
 
-.app-shell::after {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 220px 220px;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
+@keyframes vfd-boot {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  14% { opacity: 0.25; }
+  26% { opacity: 1; }
+  38% { opacity: 0.5; }
+  52%, 100% { opacity: 1; }
 }
 
-/* processing "warm wash" — neon wash intensifies while a job runs */
-.app-shell.is-processing::before {
-  background:
-    radial-gradient(60rem 46rem at 88% 4%, color-mix(in srgb, var(--neon) 17%, transparent), transparent 60%),
-    radial-gradient(56rem 52rem at 6% 54%, var(--bg-glow-gold), transparent 62%);
-  animation: atmosphere-drift 60s ease-in-out infinite alternate,
-    warm-pulse 6s ease-in-out infinite;
+@keyframes led-pulse {
+  50% { opacity: 0.3; }
 }
 
-/* one-time gold stage flash on completion — Stage 3 toggles .is-complete */
-.app-shell.is-complete::before {
-  animation: gold-bloom 1200ms var(--ease-out);
-}
-
-/* ---- shared keyframes ---------------------------------------- */
-@keyframes atmosphere-drift {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.85;
-  }
-  100% {
-    transform: translate3d(-2.5%, 2%, 0) scale(1.08);
-    opacity: 1;
-  }
-}
-
-@keyframes warm-pulse {
-  50% {
-    filter: brightness(1.28);
-  }
-}
-
-@keyframes gold-bloom {
-  0% {
-    background:
-      radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
-      radial-gradient(56rem 52rem at 6% 54%, color-mix(in srgb, var(--gold) 13%, transparent), transparent 62%);
-  }
-  30% {
-    background:
-      radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
-      radial-gradient(60rem 56rem at 6% 54%, color-mix(in srgb, var(--gold) 32%, transparent), transparent 66%);
-  }
-  100% {
-    background:
-      radial-gradient(60rem 46rem at 88% 4%, var(--bg-glow-neon), transparent 60%),
-      radial-gradient(56rem 52rem at 6% 54%, var(--bg-glow-gold), transparent 62%);
-  }
+@keyframes glow-pulse {
+  50% { box-shadow: 0 0 18px 2px var(--vfd-glow); }
 }
 
 @keyframes eq-bounce {
-  0%,
-  100% {
-    transform: scaleY(0.28);
-  }
-  50% {
-    transform: scaleY(1);
-  }
+  0%, 100% { transform: scaleY(0.22); }
+  30% { transform: scaleY(1); }
+  60% { transform: scaleY(0.45); }
+  80% { transform: scaleY(0.8); }
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
-@keyframes breathe-dot {
-  50% {
-    opacity: 0.35;
-  }
+@keyframes ants-rotate {
+  to { stroke-dashoffset: -24; }
 }
 
-/* ---- the Eq motif (reusable 5-bar equalizer, spec §2.5) ------ */
+/* ---- equalizer motif (VU bars) ------------------------------ */
+
 .eq {
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
-  height: 18px;
+  height: 14px;
 }
 
 .eq span {
-  display: block;
-  flex: 0 0 auto;
   width: 3px;
   height: 100%;
-  border-radius: 2px;
-  background: var(--gold);
-  transform-origin: bottom center;
-  animation: eq-bounce 900ms var(--ease-out) infinite;
+  border-radius: 1px;
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber-glow);
+  transform-origin: bottom;
+  transform: scaleY(0.3);
+  animation: eq-bounce 1.05s ease-in-out infinite;
 }
 
-.eq span:nth-child(1) { animation-delay: -600ms; animation-duration: 820ms; }
-.eq span:nth-child(2) { animation-delay: -260ms; animation-duration: 980ms; }
-.eq span:nth-child(3) { animation-delay: -460ms; animation-duration: 700ms; }
-.eq span:nth-child(4) { animation-delay: -120ms; animation-duration: 900ms; }
-.eq span:nth-child(5) { animation-delay: -360ms; animation-duration: 1040ms; }
+.eq span:nth-child(1) { animation-delay: 0ms; }
+.eq span:nth-child(2) { animation-delay: 160ms; }
+.eq span:nth-child(3) { animation-delay: 320ms; }
+.eq span:nth-child(4) { animation-delay: 90ms; }
+.eq span:nth-child(5) { animation-delay: 240ms; }
 
-.eq--sm { height: 11px; gap: 1.5px; }
+.eq--sm { height: 10px; gap: 1.5px; }
 .eq--sm span { width: 2px; }
+.eq--lg { height: 26px; gap: 3px; }
+.eq--lg span { width: 4px; }
 
-.eq--md { height: 18px; gap: 2px; }
-
-.eq--lg { height: 44px; gap: 4px; }
-.eq--lg span { width: 5px; border-radius: 3px; }
-
-/* neon-tinted variant for "original vocals" / active accents */
-.eq--neon span { background: var(--neon); }
-
-/* ---- text selection: dim neon wash --------------------------- */
-::selection {
-  background: color-mix(in srgb, var(--neon) 30%, transparent);
-  color: var(--ink);
-  text-shadow: none;
+.eq--neon span {
+  background: var(--vfd);
+  box-shadow: 0 0 6px var(--vfd-glow);
 }
 
-/* ---- scrollbar on dark --------------------------------------- */
-html {
-  scrollbar-color: var(--line-2) transparent;
-  scrollbar-width: thin;
-}
+/* ---- reduced motion: the deck holds still ------------------- */
 
-::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-0);
-}
-
-::-webkit-scrollbar-thumb {
-  border: 3px solid var(--bg-0);
-  border-radius: var(--r-pill);
-  background: var(--line-2);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-faint);
-}
-
-/* ---- focus ring ---------------------------------------------- */
-:focus-visible {
-  outline: 2px solid var(--neon);
-  outline-offset: 3px;
-}
-
-/* The real file input sits visually hidden inside the drop zone; when it
-   takes keyboard focus, surface the ring on the well itself so the
-   affordance is visible (the 1px input alone would show almost nothing). */
-.drop-zone:has(input[type='file']:focus-visible) {
-  outline: 2px solid var(--neon);
-  outline-offset: 3px;
-}
-
-/* ---- reduced motion: global kill switch ---------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
-
-  .app-shell::before,
-  .app-shell.is-processing::before,
-  .app-shell.is-complete::before {
-    animation: none !important;
-  }
-
-  .eq span {
-    animation: none !important;
-    transform: scaleY(0.6);
-  }
+  .eq span { animation: none; transform: scaleY(0.55); }
 }

@@ -1,16 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Variants } from 'motion/react'
 import {
-  AlertIcon,
-  CheckIcon,
   DownloadIcon,
+  EjectIcon,
   NoteIcon,
   PauseIcon,
   PlayIcon,
-  ShieldIcon,
-  UploadIcon,
-  WaveMark,
 } from './components/icons'
 import { Eq } from './components/Eq'
 import './App.css'
@@ -261,10 +257,8 @@ async function createYoutubeJob(
   return normalizeJob(await response.json())
 }
 
-/* Presentational number roll: whenever `value` changes the old digits
-   roll up and out while the new ones roll in (spec §2.5 "percentage
-   readouts tick"). AnimatePresence keyed per value; popLayout keeps the
-   exiting copy out of flow so the readout never jumps width. */
+/* Presentational number roll for the VFD readouts: whenever `value`
+   changes the old digits roll out and the new ones roll in. */
 function TickNumber({ value, reduce }: { value: number; reduce: boolean | null }) {
   return (
     <span className="tick-number">
@@ -281,6 +275,62 @@ function TickNumber({ value, reduce }: { value: number; reduce: boolean | null }
         </motion.span>
       </AnimatePresence>
     </span>
+  )
+}
+
+/* The turntable. Purely presentational: the disc, the progress/seek ring,
+   the marching-ants drop ring, the tonearm, and a center label (children).
+   Extra props (drag handlers, progressbar roles) spread onto the zone. */
+type PlatterProps = {
+  spinning?: boolean
+  engaged?: boolean
+  ring?: number | null
+  ringTone?: 'vfd' | 'amber' | 'red'
+  dragging?: boolean
+  children?: ReactNode
+} & HTMLAttributes<HTMLDivElement>
+
+function Platter({
+  spinning = false,
+  engaged = false,
+  ring = null,
+  ringTone = 'vfd',
+  dragging = false,
+  children,
+  ...zoneProps
+}: PlatterProps) {
+  const zoneClass = [
+    'platter-zone',
+    spinning ? 'platter--spinning' : '',
+    dragging ? 'dragging' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  return (
+    <div className={zoneClass} {...zoneProps}>
+      <div className="platter-disc" aria-hidden="true" />
+      <svg className="platter-ring" viewBox="0 0 100 100" aria-hidden="true">
+        <circle className="ring-track" cx="50" cy="50" r="48.6" />
+        {ring !== null && (
+          <circle
+            className={`ring-fill${ringTone !== 'vfd' ? ` ring-fill--${ringTone}` : ''}`}
+            cx="50"
+            cy="50"
+            r="48.6"
+            pathLength={100}
+            style={{ strokeDashoffset: 100 - Math.min(100, Math.max(0, ring)) }}
+          />
+        )}
+      </svg>
+      <svg className="drop-ring" viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="49.2" pathLength={120} />
+      </svg>
+      <div className={`tonearm${engaged ? ' tonearm--engaged' : ''}`} aria-hidden="true">
+        <span className="tonearm-arm" />
+        <span className="tonearm-pivot" />
+      </div>
+      <div className="platter-label">{children}</div>
+    </div>
   )
 }
 
@@ -404,120 +454,114 @@ function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
     setCurrentTime(value)
   }
 
-  // Presentational fill % for the custom range gradients (derived, no new state).
+  // Presentational fill % for the seek ring / range gradients (derived state).
   const seekPercent = duration ? (Math.min(currentTime, duration) / duration) * 100 : 0
 
   return (
-    <section className="result-card" aria-labelledby="result-heading">
-      <motion.div
-        className="result-heading"
-        initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
-        animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-        transition={reduce ? { duration: 0.2 } : { type: 'spring', stiffness: 320, damping: 22, delay: 0.1 }}
-      >
-        <div className="result-well" aria-hidden="true"><CheckIcon size={22} /></div>
-        <div>
-          <p className="eyebrow eyebrow--gold">Separation complete</p>
-          <h2 id="result-heading">Your karaoke mix</h2>
-          <p className="result-meta">{jobEngineLabel(job)} · CPU</p>
-        </div>
-      </motion.div>
+    <>
+      <div className="stage-readout">
+        <p className="readout-main readout-main--title">{jobDisplayName(job)}</p>
+        <p className="readout-sub">Separation complete · {jobEngineLabel(job)} · CPU</p>
+      </div>
 
-      <div className="transport">
+      <Platter spinning={playing && !reduce} engaged ring={seekPercent} ringTone="amber">
         <button
           className="play-button"
           type="button"
           data-state={playing ? 'pause' : 'play'}
           onClick={togglePlayback}
         >
-          {playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
+          {playing ? <PauseIcon size={22} /> : <PlayIcon size={22} />}
           <span className="sr-only">{playing ? 'Pause' : 'Play'} stem mix</span>
         </button>
-        <span className="transport-time">
-          {formatTime(currentTime)}
-          {playing && <Eq size="sm" />}
-        </span>
-        <input
-          className="transport-range"
-          style={{ '--seek': `${seekPercent}%` } as CSSProperties}
-          aria-label="Playback position"
-          type="range"
-          min="0"
-          max={duration || 1}
-          step="0.01"
-          value={Math.min(currentTime, duration || 1)}
-          onChange={(event) => seek(Number(event.target.value))}
+      </Platter>
+
+      <div className="stage-under">
+        {playbackError && <p className="inline-error">{playbackError}</p>}
+
+        <div className="transport">
+          <span className="transport-time">
+            {formatTime(currentTime)}
+            {playing && <Eq size="sm" />}
+          </span>
+          <input
+            className="transport-range"
+            style={{ '--seek': `${seekPercent}%` } as CSSProperties}
+            aria-label="Playback position"
+            type="range"
+            min="0"
+            max={duration || 1}
+            step="0.01"
+            value={Math.min(currentTime, duration || 1)}
+            onChange={(event) => seek(Number(event.target.value))}
+          />
+          <span className="transport-time">{formatTime(duration)}</span>
+        </div>
+
+        <div className="mix-console">
+          <label className="fader fader--amber">
+            <span className="fader-head">
+              <strong>Instrumental</strong>
+              <output><TickNumber value={Math.round(instrumentalVolume * 100)} reduce={reduce} />%</output>
+            </span>
+            <input
+              className="fader-range"
+              style={{ '--seek': `${instrumentalVolume * 100}%` } as CSSProperties}
+              aria-label="Instrumental volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={instrumentalVolume}
+              onChange={(event) => setInstrumentalVolume(Number(event.target.value))}
+            />
+          </label>
+          <label className="fader fader--vox">
+            <span className="fader-head">
+              <strong>Original vocals</strong>
+              <output><TickNumber value={Math.round(vocalVolume * 100)} reduce={reduce} />%</output>
+            </span>
+            <input
+              className="fader-range"
+              style={{ '--seek': `${vocalVolume * 100}%` } as CSSProperties}
+              aria-label="Original vocal volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={vocalVolume}
+              onChange={(event) => setVocalVolume(Number(event.target.value))}
+            />
+          </label>
+        </div>
+
+        <audio
+          ref={instrumentalRef}
+          src={instrumentalUrl}
+          preload="auto"
+          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+          onEnded={(event) => {
+            event.currentTarget.currentTime = 0
+            if (vocalsRef.current) {
+              vocalsRef.current.pause()
+              vocalsRef.current.currentTime = 0
+            }
+            setPlaying(false)
+            setCurrentTime(0)
+          }}
         />
-        <span className="transport-time">{formatTime(duration)}</span>
+        <audio ref={vocalsRef} src={vocalsUrl} preload="auto" />
+
+        <a className="hw-download" href={`${instrumentalUrl}?download=true`}>
+          <DownloadIcon size={16} />
+          Download instrumental WAV
+        </a>
       </div>
-
-      {playbackError && <p className="inline-error">{playbackError}</p>}
-
-      <div className="mixer-grid">
-        <label className="stem-control">
-          <span>
-            <strong>Instrumental</strong>
-            <small>the karaoke bed</small>
-          </span>
-          <output><TickNumber value={Math.round(instrumentalVolume * 100)} reduce={reduce} />%</output>
-          <input
-            className="stem-range stem-range--gold"
-            style={{ '--seek': `${instrumentalVolume * 100}%` } as CSSProperties}
-            aria-label="Instrumental volume"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={instrumentalVolume}
-            onChange={(event) => setInstrumentalVolume(Number(event.target.value))}
-          />
-        </label>
-        <label className="stem-control">
-          <span>
-            <strong>Original vocals</strong>
-            <small>blend back for guidance</small>
-          </span>
-          <output><TickNumber value={Math.round(vocalVolume * 100)} reduce={reduce} />%</output>
-          <input
-            className="stem-range"
-            style={{ '--seek': `${vocalVolume * 100}%` } as CSSProperties}
-            aria-label="Original vocal volume"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={vocalVolume}
-            onChange={(event) => setVocalVolume(Number(event.target.value))}
-          />
-        </label>
-      </div>
-
-      <audio
-        ref={instrumentalRef}
-        src={instrumentalUrl}
-        preload="auto"
-        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
-        onEnded={(event) => {
-          event.currentTarget.currentTime = 0
-          if (vocalsRef.current) {
-            vocalsRef.current.pause()
-            vocalsRef.current.currentTime = 0
-          }
-          setPlaying(false)
-          setCurrentTime(0)
-        }}
-      />
-      <audio ref={vocalsRef} src={vocalsUrl} preload="auto" />
-
-      <a className="primary-button download" href={`${instrumentalUrl}?download=true`}>
-        <DownloadIcon size={18} />
-        Download instrumental WAV
-      </a>
-    </section>
+    </>
   )
 }
 
-function ProgressCard({ job, reduce }: { job: Job; reduce: boolean | null }) {
+function ProcessDisplay({ job, reduce }: { job: Job; reduce: boolean | null }) {
   const melbandSelected = job.separator_engine === 'melband_roformer'
   const stages: Array<{ status: JobStatus; label: string }> = job.source_type === 'youtube'
     ? [
@@ -560,124 +604,130 @@ function ProgressCard({ job, reduce }: { job: Job; reduce: boolean | null }) {
             : 'Preparing separation…'
 
   return (
-    <section className="progress-card" aria-live="polite">
-      <p className="on-air" aria-hidden="true">On air</p>
-      <div className="on-air-well" aria-hidden="true">
-        <Eq size="lg" />
+    <>
+      <div className="stage-readout">
+        <p className="readout-main"><TickNumber value={job.progress} reduce={reduce} />%</p>
+        <p className="readout-sub readout-sub--amber">
+          {passLabel ? `${passLabel} · ` : ''}{progressDetail}
+        </p>
       </div>
-      <p className="eyebrow">{jobEngineLabel(job)} · CPU</p>
-      <h2>{job.message}</h2>
-      <p className="muted">
-        {jobDisplayName(job)} · {job.size_bytes > 0 ? formatBytes(job.size_bytes) : 'YouTube source'}
-      </p>
-      <div className="progress-readout">
-        <span className="readout-pct"><TickNumber value={job.progress} reduce={reduce} />%</span>
-        <span className="readout-pass">{passLabel}</span>
-        <span className="readout-eta">{progressDetail}</span>
-      </div>
-      <div
-        className="progress-track"
+
+      <Platter
+        spinning={!reduce}
+        engaged
+        ring={job.progress}
         role="progressbar"
         aria-label="Stem separation progress"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={job.progress}
       >
-        <span style={{ width: `${job.progress}%` }} />
+        <p className="label-kicker label-kicker--amber">
+          <span className="led led--amber led--pulse" aria-hidden="true" /> On air
+        </p>
+        <p className="label-title">{jobDisplayName(job)}</p>
+        <p className="label-sub">{job.message}</p>
+      </Platter>
+
+      <div className="stage-under">
+        <ol className="stage-leds">
+          {stages.map((stage, index) => {
+            const done = index < currentIndex
+            const active = index === currentIndex
+            return (
+              <li key={stage.status} className={done ? 'done' : active ? 'active' : ''}>
+                <span className="led" aria-hidden="true" />
+                {stage.label}
+              </li>
+            )
+          })}
+        </ol>
+        <p className="local-note">Keep both terminal windows open while this runs.</p>
       </div>
-      <ol className="stage-list">
-        {stages.map((stage, index) => {
-          const done = index < currentIndex
-          const active = index === currentIndex
-          return (
-            <li key={stage.status} className={done ? 'done' : active ? 'active' : ''}>
-              <span className="stage-dot" aria-hidden="true">
-                {done ? <CheckIcon size={11} /> : active ? <i /> : index + 1}
-              </span>
-              <span className="stage-label">{stage.label}</span>
-            </li>
-          )
-        })}
-      </ol>
-      <p className="local-note">Keep both terminal windows open while this runs.</p>
-    </section>
+    </>
   )
 }
 
-function JobHistory({
+function SetList({
   jobs,
   currentJobId,
+  restoring,
   reduce,
   onOpen,
   onDelete,
 }: {
   jobs: Job[]
   currentJobId?: string
+  restoring: boolean
   reduce: boolean | null
   onOpen: (job: Job) => void
   onDelete: (job: Job) => void
 }) {
-  if (jobs.length === 0) return null
-
   return (
-    <section className="history-card" aria-labelledby="history-heading">
-      <div className="history-heading">
-        <div>
-          <p className="eyebrow">Stored locally</p>
-          <h2 id="history-heading">Recent tracks</h2>
-        </div>
-        <span className="history-count">{jobs.length} saved</span>
+    <aside className="rail" aria-labelledby="setlist-heading">
+      <div className="rail-head">
+        <h2 className="rail-title" id="setlist-heading">Set list</h2>
+        <span className="rail-count">{jobs.length > 0 ? String(jobs.length).padStart(2, '0') : '——'}</span>
       </div>
-      <div className="history-list">
-        <AnimatePresence>
-          {jobs.map((historyJob, index) => {
-            const active = activeStatuses.has(historyJob.status)
-            const selected = historyJob.id === currentJobId
-            const engineLabel = jobEngineLabel(historyJob)
-            const ticket = `№${String(index + 1).padStart(2, '0')}`
-            return (
-              <motion.article
-                layout
-                key={historyJob.id}
-                className={`history-row ${selected ? 'selected' : ''}`}
-                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  transition: reduce
-                    ? { duration: 0.2 }
-                    : { type: 'spring', stiffness: 280, damping: 30, delay: index * 0.04 },
-                }}
-                exit={reduce ? { opacity: 0 } : { opacity: 0, x: -14, transition: { duration: 0.18 } }}
-              >
-                <span className="history-index" aria-hidden="true">{ticket}</span>
-                <div className="history-copy">
-                  <strong>{historyJob.original_filename}</strong>
-                  <small>{engineLabel} · {formatJobDate(historyJob.created_at)}</small>
-                </div>
-                <span className={`history-status ${active ? 'active' : historyJob.status}`}>
-                  {active ? <Eq size="sm" tone="neon" /> : <i aria-hidden="true" />}
-                  {active ? `${historyJob.progress}% processing` : historyJob.status}
-                </span>
-                <div className="history-actions">
-                  {historyJob.status === 'completed' && historyJob.assets.instrumental && (
-                    <a href={`${assetUrl(historyJob.assets.instrumental)}?download=true`}>Download</a>
-                  )}
-                  <button type="button" onClick={() => onOpen(historyJob)}>
-                    {active ? 'Resume' : 'Open'}
-                  </button>
-                  {!active && (
-                    <button className="danger" type="button" onClick={() => onDelete(historyJob)}>
-                      Delete
+      <div className="slot-list">
+        {restoring ? (
+          <div className="rail-empty">
+            <p>Reading local library…</p>
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="rail-empty">
+            <NoteIcon size={18} />
+            <p>No tracks on file<br />Drop one on the platter</p>
+          </div>
+        ) : (
+          <AnimatePresence>
+            {jobs.map((historyJob, index) => {
+              const active = activeStatuses.has(historyJob.status)
+              const selected = historyJob.id === currentJobId
+              const engineLabel = jobEngineLabel(historyJob)
+              const ticket = String(index + 1).padStart(2, '0')
+              return (
+                <motion.article
+                  layout
+                  key={historyJob.id}
+                  className={`slot ${selected ? 'slot--selected' : ''}`}
+                  initial={reduce ? { opacity: 0 } : { opacity: 0, x: -12 }}
+                  animate={{
+                    opacity: 1,
+                    x: 0,
+                    transition: reduce
+                      ? { duration: 0.2 }
+                      : { type: 'spring', stiffness: 280, damping: 30, delay: index * 0.04 },
+                  }}
+                  exit={reduce ? { opacity: 0 } : { opacity: 0, x: -14, transition: { duration: 0.18 } }}
+                >
+                  <span className="slot-index" aria-hidden="true">{ticket}</span>
+                  <strong className="slot-name">{historyJob.original_filename}</strong>
+                  <span className="slot-meta">{engineLabel} · {formatJobDate(historyJob.created_at)}</span>
+                  <span className={`slot-status ${active ? 'active' : historyJob.status}`}>
+                    {active ? <Eq size="sm" /> : <i aria-hidden="true" />}
+                    {active ? `${historyJob.progress}% processing` : historyJob.status}
+                  </span>
+                  <div className="slot-actions">
+                    {historyJob.status === 'completed' && historyJob.assets.instrumental && (
+                      <a href={`${assetUrl(historyJob.assets.instrumental)}?download=true`}>Download</a>
+                    )}
+                    <button type="button" onClick={() => onOpen(historyJob)}>
+                      {active ? 'Resume' : 'Open'}
                     </button>
-                  )}
-                </div>
-              </motion.article>
-            )
-          })}
-        </AnimatePresence>
+                    {!active && (
+                      <button className="danger" type="button" onClick={() => onDelete(historyJob)}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </motion.article>
+              )
+            })}
+          </AnimatePresence>
+        )}
       </div>
-    </section>
+    </aside>
   )
 }
 
@@ -729,7 +779,7 @@ function App() {
           localStorage.removeItem(currentJobStorageKey)
         }
       } catch {
-        // The health banner handles an unavailable API; do not hide the upload UI.
+        // The VFD strip reports an unavailable API; do not hide the panel UI.
       } finally {
         if (!cancelled) setRestoringJobs(false)
       }
@@ -836,445 +886,504 @@ function App() {
 
   const reduce = useReducedMotion()
   const isProcessing = !!job && activeStatuses.has(job.status)
-  // Derived shell flags (presentational only): completion toggles the one-time
-  // gold-bloom stage flash defined in base.css (spec §2.4 / §3.5).
-  const isComplete = job?.status === 'completed'
+  const startDisabled =
+    (sourceType === 'upload' ? !file : !youtubeUrl.trim()) || !rightsConfirmed || uploading || health?.ready === false
 
-  // Shared card entrance/exit for the four main views (spec §2.5).
-  const cardVariants: Variants = reduce
+  /* One line of phosphor: the VFD strip reports whatever matters most. */
+  const vfd: { text: ReactNode; tone?: 'amber' | 'red'; alert?: boolean } = healthError
+    ? { text: <>The local API is offline. Start it with <code>npm run api</code>, then refresh.</>, tone: 'red', alert: true }
+    : health && !health.ready
+      ? { text: <>Setup is incomplete. Missing {missingTools.join(', ')}. Run <code>npm run setup</code> and check the README.</>, tone: 'amber', alert: true }
+      : error
+        ? { text: error, tone: 'red', alert: true }
+        : restoringJobs
+          ? { text: 'Reading local library…' }
+          : isProcessing && job
+            ? { text: `${job.message} · ${job.progress}%` }
+            : job?.status === 'failed'
+              ? { text: 'Processing stopped · see stage readout', tone: 'red' }
+              : job?.status === 'completed'
+                ? { text: `Ready · ${jobDisplayName(job)}` }
+                : { text: 'Ready · Load a track to begin' }
+
+  /* Shared stage-view swap (the machine morphs; it never navigates). */
+  const stageVariants: Variants = reduce
     ? {
         initial: { opacity: 0 },
         animate: { opacity: 1, transition: { duration: 0.2 } },
         exit: { opacity: 0, transition: { duration: 0.15 } },
       }
     : {
-        initial: { opacity: 0, y: 16, scale: 0.985 },
+        initial: { opacity: 0, scale: 0.985 },
         animate: {
           opacity: 1,
-          y: 0,
           scale: 1,
-          transition: { type: 'spring', stiffness: 220, damping: 26, delay: 0.06 },
+          transition: { type: 'spring', stiffness: 240, damping: 28 },
         },
         exit: {
           opacity: 0,
-          y: -8,
           scale: 0.985,
-          transition: { duration: 0.2, ease: EASE_OUT },
+          transition: { duration: 0.18, ease: EASE_OUT },
         },
       }
 
+  const regionFade = (delay: number) => ({
+    initial: reduce ? { opacity: 0 } : { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    transition: { delay, duration: 0.5, ease: EASE_OUT },
+  })
+
   return (
-    <div className={`app-shell${isProcessing ? ' is-processing' : ''}${isComplete ? ' is-complete' : ''}`}>
-      <motion.header
-        className="site-header"
-        initial={reduce ? { opacity: 0 } : { opacity: 0, y: -14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: EASE_OUT }}
-      >
-        <a className="brand" href="/" aria-label="Karaoke Box home">
-          <span className="brand-mark" aria-hidden="true"><WaveMark size={20} /></span>
-          <span className="brand-wordmark">Karaoke Box</span>
-        </a>
-        <span className="local-pill"><i aria-hidden="true" /> Local only</span>
-      </motion.header>
-
-      <main>
-        <section className="hero">
-          <motion.p
-            className="eyebrow eyebrow--gold"
-            initial={{ opacity: 0, y: reduce ? 0 : 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.08, duration: 0.4, ease: EASE_OUT }}
+    <div className="deck-room">
+      <div className="deck brushed screws">
+        <motion.header className="deck-top" {...regionFade(0)}>
+          <a className="plate" href="/" aria-label="Karaoke Box home">
+            <span className="plate-name">Karaoke Box</span>
+            <span className="plate-model">Deck·01</span>
+          </a>
+          <div
+            className="vfd-strip"
+            data-tone={vfd.tone}
+            role={vfd.alert ? 'alert' : undefined}
+            aria-live={vfd.alert ? undefined : 'polite'}
           >
-            Make the room your stage
-          </motion.p>
-          <h1 className="hero-title">
-            <span className="hero-line">
-              <motion.span
-                className="hero-line__inner"
-                initial={reduce ? { opacity: 0 } : { y: '110%' }}
-                animate={reduce ? { opacity: 1 } : { y: '0%' }}
-                transition={{ delay: 0.2, duration: 0.7, ease: EASE_OUT }}
-              >
-                Turn your track into
-              </motion.span>
-            </span>
-            <motion.span
-              className="hero-neon"
-              initial={{ opacity: 0 }}
-              animate={reduce ? { opacity: 1 } : { opacity: [0, 1, 0.25, 1, 0.55, 1] }}
-              transition={
-                reduce
-                  ? { delay: 0.36, duration: 0.4 }
-                  : { delay: 0.5, duration: 0.72, times: [0, 0.16, 0.3, 0.5, 0.72, 1] }
-              }
-            >
-              karaoke.
-            </motion.span>
-          </h1>
-          <motion.p
-            className="hero-lede"
-            initial={{ opacity: 0, y: reduce ? 0 : 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9, duration: 0.5, ease: EASE_OUT }}
-          >
-            Upload music or provide a YouTube video you’re allowed to adapt. Karaoke Box
-            separates the vocals locally, then gives you a full-quality instrumental to sing over.
-          </motion.p>
-        </section>
-
-        {healthError && (
-          <div className="setup-alert" role="alert">
-            <strong>The local API is offline.</strong> Start it with <code>npm run api</code>, then refresh.
+            {vfd.text}
           </div>
-        )}
-        {health && !health.ready && (
-          <div className="setup-alert" role="alert">
-            <strong>Setup is incomplete.</strong> Missing {missingTools.join(', ')}. Run <code>npm run setup</code>
-            and check the README.
+          <div className="status-cluster">
+            <span
+              className={`led ${healthError ? 'led--red' : health && !health.ready ? 'led--amber' : 'led--green'}`}
+              aria-hidden="true"
+            />
+            <span className="status-label">Local only</span>
           </div>
-        )}
-        {error && <div className="error-alert" role="alert">{error}</div>}
+        </motion.header>
 
-        {restoringJobs && (
-          <div className="restore-status" aria-live="polite">
-            <span /> Loading saved jobs…
-          </div>
-        )}
+        <div className="deck-body">
+          <motion.div className="rail-shell" {...regionFade(0.15)}>
+            <SetList
+              jobs={history}
+              currentJobId={job?.id}
+              restoring={restoringJobs}
+              reduce={reduce}
+              onOpen={openStoredJob}
+              onDelete={(storedJob) => void deleteStoredJob(storedJob)}
+            />
+          </motion.div>
 
-        <AnimatePresence mode="wait">
-        {!restoringJobs && !job && (
-          <motion.div
-            className="stage-view"
-            key="upload"
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-          <section className="upload-card" aria-labelledby="upload-heading">
-            <div className="card-heading">
-              <span className="step-index" aria-hidden="true">01</span>
-              <div>
-                <p className="eyebrow">Source audio</p>
-                <h2 id="upload-heading">Choose your track</h2>
-              </div>
-            </div>
+          <main className="stage">
+            <AnimatePresence mode="wait">
+              {restoringJobs && (
+                <motion.div
+                  className="stage-view"
+                  key="boot"
+                  variants={stageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <div className="stage-readout">
+                    <p className="readout-main">··</p>
+                    <p className="readout-sub">Power on</p>
+                  </div>
+                  <Platter ring={null}>
+                    <p className="label-kicker">Boot</p>
+                    <p className="label-title">Reading local library…</p>
+                  </Platter>
+                </motion.div>
+              )}
 
-            <div className="source-tabs" role="tablist" aria-label="Audio source">
-              <button
-                className={sourceType === 'upload' ? 'selected' : ''}
-                type="button"
-                role="tab"
-                aria-selected={sourceType === 'upload'}
-                onClick={() => {
-                  setSourceType('upload')
-                  setError('')
-                }}
-              >
-                {sourceType === 'upload' && (
-                  <motion.span
-                    className="tab-indicator"
-                    layoutId="tab-indicator"
-                    aria-hidden="true"
-                    transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38 }}
-                  />
-                )}
-                <span className="tab-label">Upload a file</span>
-              </button>
-              <button
-                className={sourceType === 'youtube' ? 'selected' : ''}
-                type="button"
-                role="tab"
-                aria-selected={sourceType === 'youtube'}
-                onClick={() => {
-                  setSourceType('youtube')
-                  setError('')
-                }}
-              >
-                {sourceType === 'youtube' && (
-                  <motion.span
-                    className="tab-indicator"
-                    layoutId="tab-indicator"
-                    aria-hidden="true"
-                    transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38 }}
-                  />
-                )}
-                <span className="tab-label">YouTube URL</span>
-              </button>
-            </div>
-
-            {sourceType === 'upload' ? (
-              <div
-                className={`drop-zone ${dragging ? 'dragging' : ''} ${file ? 'has-file' : ''}`}
-                onDragEnter={(event) => {
-                  event.preventDefault()
-                  setDragging(true)
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setDragging(false)
-                  chooseFile(event.dataTransfer.files[0])
-                }}
-              >
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
-                  onChange={(event) => chooseFile(event.target.files?.[0])}
-                />
-                <svg className="drop-ants" aria-hidden="true">
-                  <rect x="0" y="0" width="100%" height="100%" rx="11" />
-                </svg>
-                {file ? (
-                  <>
-                    <div className="file-icon" aria-hidden="true"><NoteIcon size={24} /></div>
-                    <strong>{file.name}</strong>
-                    <span>{formatBytes(file.size)}</span>
-                    <button className="text-button" type="button" onClick={() => inputRef.current?.click()}>
-                      Choose another
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="upload-icon" aria-hidden="true"><UploadIcon size={24} /></div>
-                    <strong>Drop an audio file here</strong>
-                    <span>MP3, WAV, M4A, FLAC, OGG, AAC or Opus · up to 250 MB</span>
-                    <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
-                      Browse files
-                    </button>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="youtube-source">
-                <label htmlFor="youtube-url">
-                  <span>Individual YouTube video URL</span>
-                  <input
-                    id="youtube-url"
-                    type="url"
-                    inputMode="url"
-                    placeholder="https://www.youtube.com/watch?v=…"
-                    value={youtubeUrl}
-                    onChange={(event) => setYoutubeUrl(event.target.value)}
-                    disabled={uploading}
-                  />
-                </label>
-                <p>Individual HTTPS videos are supported. Playlist/channel URLs without a specific video are not accepted; queue parameters are ignored when a video ID is present.</p>
-              </div>
-            )}
-
-            <fieldset className="engine-picker">
-              <legend>
-                Separation engine
-                <small>Choose the faster current path or the experimental high-quality model.</small>
-              </legend>
-              <div className="engine-options">
-                <label className={`engine-option ${separatorEngine === 'demucs' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="separator-engine"
-                    value="demucs"
-                    checked={separatorEngine === 'demucs'}
-                    onChange={() => setSeparatorEngine('demucs')}
-                  />
-                  <span className="radio-mark" aria-hidden="true" />
-                  <span className="engine-copy">
-                    <strong>Demucs <em>Current · faster</em></strong>
-                    <small>CPU separation with Natural backing, Best quality, and Strong removal profiles.</small>
-                  </span>
-                </label>
-                <label className={`engine-option ${separatorEngine === 'melband_roformer' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="separator-engine"
-                    value="melband_roformer"
-                    checked={separatorEngine === 'melband_roformer'}
-                    onChange={() => {
-                      setSeparatorEngine('melband_roformer')
-                      setQuality('preserve')
+              {!restoringJobs && !job && (
+                <motion.div
+                  className="stage-view"
+                  key="load"
+                  variants={stageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <div className="stage-readout">
+                    <p className="readout-main">{file ? 'Loaded' : 'Ready'}</p>
+                    <p className="readout-sub">
+                      {file
+                        ? `${file.name} · ${formatBytes(file.size)}`
+                        : 'Load a track · Set the panel · Press start'}
+                    </p>
+                  </div>
+                  <Platter
+                    dragging={dragging}
+                    ring={null}
+                    onDragEnter={(event) => {
+                      event.preventDefault()
+                      setDragging(true)
                     }}
-                  />
-                  <span className="radio-mark" aria-hidden="true" />
-                  <span className="engine-copy">
-                    <strong>High quality · MelBand RoFormer <em>Experimental</em></strong>
-                    <small>CPU-only model with an ~871 MB first download. Runtime varies by track and computer.</small>
-                  </span>
-                </label>
-              </div>
-            </fieldset>
+                    onDragOver={(event) => event.preventDefault()}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      setDragging(false)
+                      chooseFile(event.dataTransfer.files[0])
+                    }}
+                  >
+                    <input
+                      ref={inputRef}
+                      type="file"
+                      aria-label="Choose an audio file"
+                      accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
+                      onChange={(event) => chooseFile(event.target.files?.[0])}
+                    />
+                    {file ? (
+                      <>
+                        <p className="label-kicker">Track loaded</p>
+                        <p className="label-title">{file.name}</p>
+                        <p className="label-sub">{formatBytes(file.size)}</p>
+                        <button className="label-button" type="button" onClick={() => inputRef.current?.click()}>
+                          Change track
+                        </button>
+                      </>
+                    ) : sourceType === 'youtube' ? (
+                      <>
+                        <p className="label-kicker">Link mode</p>
+                        <p className="label-title">Paste a YouTube URL</p>
+                        <p className="label-sub">Use the source panel →</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="label-kicker">No disc</p>
+                        <p className="label-title">Drop a track here</p>
+                        <button className="label-button" type="button" onClick={() => inputRef.current?.click()}>
+                          Browse files
+                        </button>
+                      </>
+                    )}
+                  </Platter>
+                  <p className="local-note">MP3 · WAV · M4A · FLAC · OGG · AAC · Opus — up to 250 MB, on this computer</p>
+                </motion.div>
+              )}
 
-            {separatorEngine === 'demucs' && (
-              <fieldset className="quality-picker">
-                <legend>
-                  Separation profile
-                  <small>Different mixes benefit from different tradeoffs.</small>
-                </legend>
-                <div className="quality-options">
-                  {qualityOptions.map((option) => (
-                    <label
-                      key={option.value}
-                      className={`quality-option ${quality === option.value ? 'selected' : ''}`}
+              {job && activeStatuses.has(job.status) && (
+                <motion.div
+                  className="stage-view"
+                  key="busy"
+                  aria-live="polite"
+                  variants={stageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <ProcessDisplay job={job} reduce={reduce} />
+                </motion.div>
+              )}
+
+              {job?.status === 'failed' && (
+                <motion.div
+                  className="stage-view"
+                  key="failed"
+                  variants={stageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <div className="stage-readout">
+                    <p className="readout-main readout-main--red">Fault</p>
+                    <p className="readout-sub readout-sub--red">
+                      {job.source_type === 'youtube'
+                        ? 'We couldn’t fetch this YouTube source'
+                        : 'We couldn’t separate this track'}
+                    </p>
+                  </div>
+                  <Platter ring={100} ringTone="red">
+                    <p className="label-kicker label-kicker--red">
+                      <span className="led led--red" aria-hidden="true" /> Fault
+                    </p>
+                    <p className="label-title">{jobDisplayName(job)}</p>
+                    <p className="label-sub">{jobEngineLabel(job)}</p>
+                  </Platter>
+                  <div className="stage-under" role="alert">
+                    <p className="fail-msg">{job.error || 'An unknown processing error occurred.'}</p>
+                    <button className="eject-button eject-button--inline" type="button" onClick={startOver}>
+                      <EjectIcon size={12} /> Eject · Try another source
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {job?.status === 'completed' && (
+                <motion.div
+                  className="stage-view"
+                  key="result"
+                  variants={stageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <StemMixer job={job} reduce={reduce} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
+
+          <motion.aside className="console" aria-label="Control panel" {...regionFade(0.22)}>
+            {!job ? (
+              <>
+                <section className="module">
+                  <span className="module-label">01 · Source</span>
+                  <div className="selector" role="tablist" aria-label="Audio source">
+                    <button
+                      className={sourceType === 'upload' ? 'selected' : ''}
+                      type="button"
+                      role="tab"
+                      aria-selected={sourceType === 'upload'}
+                      onClick={() => {
+                        setSourceType('upload')
+                        setError('')
+                      }}
                     >
+                      {sourceType === 'upload' && (
+                        <motion.span
+                          className="tab-indicator"
+                          layoutId="tab-indicator"
+                          aria-hidden="true"
+                          transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38 }}
+                        />
+                      )}
+                      <span className="tab-label">File</span>
+                    </button>
+                    <button
+                      className={sourceType === 'youtube' ? 'selected' : ''}
+                      type="button"
+                      role="tab"
+                      aria-selected={sourceType === 'youtube'}
+                      onClick={() => {
+                        setSourceType('youtube')
+                        setError('')
+                      }}
+                    >
+                      {sourceType === 'youtube' && (
+                        <motion.span
+                          className="tab-indicator"
+                          layoutId="tab-indicator"
+                          aria-hidden="true"
+                          transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38 }}
+                        />
+                      )}
+                      <span className="tab-label">YouTube</span>
+                    </button>
+                  </div>
+
+                  {sourceType === 'upload' ? (
+                    <div className={`file-line ${file ? 'file-line--loaded' : ''}`}>
+                      <NoteIcon size={16} />
+                      <span className="file-line-copy">
+                        <strong>{file ? file.name : 'No track loaded'}</strong>
+                        <small>{file ? formatBytes(file.size) : 'Drop on the platter or browse'}</small>
+                      </span>
+                      <button className="label-button" type="button" onClick={() => inputRef.current?.click()}>
+                        Browse
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <label className="url-field" htmlFor="youtube-url">
+                        <span>Individual YouTube video URL</span>
+                        <input
+                          id="youtube-url"
+                          type="url"
+                          inputMode="url"
+                          placeholder="https://www.youtube.com/watch?v=…"
+                          value={youtubeUrl}
+                          onChange={(event) => setYoutubeUrl(event.target.value)}
+                          disabled={uploading}
+                        />
+                      </label>
+                      <p className="url-note">
+                        Individual HTTPS videos are supported. Playlist/channel URLs without a specific video are
+                        not accepted; queue parameters are ignored when a video ID is present.
+                      </p>
+                    </>
+                  )}
+                </section>
+
+                <fieldset className="module">
+                  <legend className="module-label">02 · Engine</legend>
+                  <div className="opt-stack">
+                    <label className={`opt ${separatorEngine === 'demucs' ? 'opt--selected' : ''}`}>
                       <input
                         type="radio"
-                        name="quality"
-                        value={option.value}
-                        checked={quality === option.value}
-                        onChange={() => setQuality(option.value)}
+                        name="separator-engine"
+                        value="demucs"
+                        checked={separatorEngine === 'demucs'}
+                        onChange={() => setSeparatorEngine('demucs')}
                       />
-                      <span className="radio-mark" aria-hidden="true" />
-                      <span className="quality-copy">
-                        <strong>
-                          {option.name}
-                          {option.recommended && <em>Recommended</em>}
-                        </strong>
-                        <small>{option.description}</small>
+                      <span className="opt-led" aria-hidden="true" />
+                      <span className="opt-copy">
+                        <strong>Demucs <em>Current · faster</em></strong>
+                        <small>CPU separation with Natural backing, Best quality, and Strong removal profiles.</small>
                       </span>
-                      <span className="quality-speed">{option.speed}</span>
                     </label>
-                  ))}
+                    <label className={`opt ${separatorEngine === 'melband_roformer' ? 'opt--selected' : ''}`}>
+                      <input
+                        type="radio"
+                        name="separator-engine"
+                        value="melband_roformer"
+                        checked={separatorEngine === 'melband_roformer'}
+                        onChange={() => {
+                          setSeparatorEngine('melband_roformer')
+                          setQuality('preserve')
+                        }}
+                      />
+                      <span className="opt-led" aria-hidden="true" />
+                      <span className="opt-copy">
+                        <strong>MelBand RoFormer <em>Experimental</em></strong>
+                        <small>CPU-only model with an ~871 MB first download. Runtime varies by track and computer.</small>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
+
+                {separatorEngine === 'demucs' && (
+                  <fieldset className="module">
+                    <legend className="module-label">03 · Profile</legend>
+                    <div className="opt-stack">
+                      {qualityOptions.map((option) => (
+                        <label
+                          key={option.value}
+                          className={`opt ${quality === option.value ? 'opt--selected' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="quality"
+                            value={option.value}
+                            checked={quality === option.value}
+                            onChange={() => setQuality(option.value)}
+                          />
+                          <span className="opt-led" aria-hidden="true" />
+                          <span className="opt-copy">
+                            <strong>
+                              {option.name}
+                              {option.recommended && <em>Recommended</em>}
+                            </strong>
+                            <small>{option.description}</small>
+                          </span>
+                          <span className="opt-speed">{option.speed}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
+
+                <section className="module">
+                  <span className="module-label">04 · Rights</span>
+                  <label className="arm">
+                    <input
+                      type="checkbox"
+                      checked={rightsConfirmed}
+                      onChange={(event) => setRightsConfirmed(event.target.checked)}
+                    />
+                    <span className="arm-switch" aria-hidden="true" />
+                    <span className="arm-copy">
+                      <strong>I confirm I’m allowed to use this source</strong>
+                      <small>{rightsAttestationText}</small>
+                    </span>
+                  </label>
+                </section>
+
+                <section className="module module--start">
+                  <span className="module-label">05 · Start</span>
+                  <motion.button
+                    className="start-button"
+                    type="button"
+                    disabled={startDisabled}
+                    onClick={submit}
+                    whileTap={reduce || startDisabled ? undefined : { scale: 0.98 }}
+                    transition={{ type: 'spring', stiffness: 480, damping: 32 }}
+                  >
+                    {uploading ? (
+                      <>
+                        <span className="button-spinner" aria-hidden="true" />
+                        {sourceType === 'upload' ? `Sending ${uploadProgress}%` : 'Starting fetch…'}
+                      </>
+                    ) : (
+                      'Start'
+                    )}
+                  </motion.button>
+                  {uploading && sourceType === 'upload' && (
+                    <div className="upload-meter" aria-live="polite">
+                      <div
+                        role="progressbar"
+                        aria-label="File upload progress"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={uploadProgress}
+                      >
+                        <span style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                      <small>{uploadProgress}% of the file sent to the local API</small>
+                    </div>
+                  )}
+                  {!uploading && (
+                    <p className="start-hint">
+                      {startDisabled ? 'Load a source · arm rights to enable' : 'Separates stems on this computer'}
+                    </p>
+                  )}
+                </section>
+              </>
+            ) : (
+              <section className="module">
+                <span className="module-label">Loaded job</span>
+                <div className="job-lines">
+                  <div className="job-line">
+                    <span>Track</span>
+                    <strong>{jobDisplayName(job)}</strong>
+                  </div>
+                  <div className="job-line">
+                    <span>Engine</span>
+                    <strong>{jobEngineLabel(job)}</strong>
+                  </div>
+                  <div className="job-line">
+                    <span>Status</span>
+                    <strong>{job.status}</strong>
+                  </div>
+                  <div className="job-line">
+                    <span>Started</span>
+                    <strong>{formatJobDate(job.created_at)}</strong>
+                  </div>
                 </div>
-              </fieldset>
+                {isProcessing ? (
+                  <p className="lock-note">
+                    <span className="led led--amber led--pulse" aria-hidden="true" /> Processing · panel unlocks when done
+                  </p>
+                ) : (
+                  <button className="eject-button" type="button" onClick={startOver}>
+                    <EjectIcon size={12} /> Eject · New source
+                  </button>
+                )}
+              </section>
             )}
+          </motion.aside>
+        </div>
 
-            <label className="rights-check">
-              <input
-                type="checkbox"
-                checked={rightsConfirmed}
-                onChange={(event) => setRightsConfirmed(event.target.checked)}
-              />
-              <span className="checkmark" aria-hidden="true"><CheckIcon size={13} /></span>
-              <span>
-                <strong>I confirm I’m allowed to use this source</strong>
-                <small>{rightsAttestationText}</small>
-              </span>
-            </label>
-
-            <motion.button
-              className="primary-button"
-              type="button"
-              disabled={(sourceType === 'upload' ? !file : !youtubeUrl.trim()) || !rightsConfirmed || uploading || health?.ready === false}
-              onClick={submit}
-              whileTap={reduce ? undefined : { scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 480, damping: 32 }}
-            >
-              {uploading
-                ? sourceType === 'upload' ? `Uploading ${uploadProgress}%` : 'Starting YouTube ingest…'
-                : 'Fetch and separate'}
-              {uploading
-                ? <span className="button-spinner" aria-hidden="true" />
-                : <span aria-hidden="true">→</span>}
-            </motion.button>
-            {uploading && sourceType === 'upload' && (
-              <div className="upload-progress" aria-live="polite">
-                <div
-                  role="progressbar"
-                  aria-label="File upload progress"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={uploadProgress}
-                >
-                  <span style={{ width: `${uploadProgress}%` }} />
-                </div>
-                <small>{uploadProgress}% of the file sent to the local API</small>
-              </div>
-            )}
-          </section>
-          </motion.div>
-        )}
-
-        {job && activeStatuses.has(job.status) && (
-          <motion.div
-            className="stage-view"
-            key="progress"
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-            <ProgressCard job={job} reduce={reduce} />
-          </motion.div>
-        )}
-
-        {job?.status === 'failed' && (
-          <motion.div
-            className="stage-view"
-            key="failed"
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-          <motion.section
-            className="failed-card"
-            role="alert"
-            initial={reduce ? undefined : { x: 0 }}
-            animate={reduce ? undefined : { x: [0, -6, 5, 0] }}
-            transition={reduce ? undefined : { duration: 0.35, ease: 'easeOut', times: [0, 0.35, 0.7, 1] }}
-          >
-            <div className="failed-icon" aria-hidden="true"><AlertIcon size={22} /></div>
-            <p className="eyebrow eyebrow--danger">Processing stopped</p>
-            <h2>{job.source_type === 'youtube' ? 'We couldn’t fetch this YouTube source' : 'We couldn’t separate this track'}</h2>
-            <p>{job.error || 'An unknown processing error occurred.'}</p>
-            <button className="secondary-button" type="button" onClick={startOver}>Try another source</button>
-          </motion.section>
-          </motion.div>
-        )}
-
-        {job?.status === 'completed' && (
-          <motion.div
-            className="stage-view"
-            key="result"
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-            <StemMixer job={job} reduce={reduce} />
-            <button className="start-over" type="button" onClick={startOver}>Process another source</button>
-          </motion.div>
-        )}
-        </AnimatePresence>
-
-        {!restoringJobs && (
-          <JobHistory
-            jobs={history}
-            currentJobId={job?.id}
-            reduce={reduce}
-            onOpen={openStoredJob}
-            onDelete={(storedJob) => void deleteStoredJob(storedJob)}
-          />
-        )}
-
-        <motion.section
-          className="house-rules"
-          aria-label="House rules"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.9, duration: 0.5, ease: EASE_OUT }}
-        >
-          <span className="house-rules__mark" aria-hidden="true"><ShieldIcon size={15} /></span>
-          <ul className="house-rules__list">
+        <motion.footer className="deck-bottom" {...regionFade(0.3)}>
+          <ul className="rules-line">
             <li>Sources &amp; stems stay on this computer</li>
             <li>Stored only in local app data</li>
             <li>CPU processing</li>
             <li>WAV output</li>
             <li>No cloud storage</li>
+            <li>Separation does not change a song’s underlying rights</li>
           </ul>
-        </motion.section>
-      </main>
-
-      <motion.footer
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.95, duration: 0.5, ease: EASE_OUT }}
-      >
-        <span>Karaoke Box · Local studio</span>
-        <span>Separation does not change a song’s underlying rights.</span>
-      </motion.footer>
+          <div className="tool-leds">
+            {(['ffmpeg', 'ffprobe', 'demucs'] as const).map((tool) => (
+              <span key={tool}>
+                <span
+                  className={`led ${health ? (health.tools[tool] ? 'led--green' : 'led--red') : ''}`}
+                  aria-hidden="true"
+                />
+                {tool}
+              </span>
+            ))}
+          </div>
+        </motion.footer>
+      </div>
     </div>
   )
 }

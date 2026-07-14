@@ -1,9 +1,10 @@
 /* ============================================================
    Karaoke Box — component styles
-   Stage 1: the shell (header · hero · house-rules · footer) is
-   fully rebuilt on the Neon Lounge tokens. The cards below live
-   in a clearly marked LEGACY block, remapped onto the new
-   palette so they stay coherent until Stages 2–3 rebuild them.
+   Stage 1: the shell (header · hero · house-rules · footer).
+   Stage 2: the upload flow (choose-your-track card + alerts) is
+   rebuilt on the Neon Lounge tokens in the STAGE 2 block below.
+   The progress card, stem mixer and history still live in the
+   clearly marked LEGACY block until Stage 3 rebuilds them.
    ============================================================ */
 
 /* ---- header -------------------------------------------------- */
@@ -147,41 +148,6 @@ main {
   line-height: 1.7;
 }
 
-/* ---- alerts (slim rail treatment) ---------------------------- */
-.setup-alert,
-.error-alert {
-  position: relative;
-  overflow: hidden;
-  margin: -24px 0 28px;
-  padding: 13px 16px 13px 20px;
-  border: 1px solid var(--warn-dim);
-  border-radius: var(--r-md);
-  background: var(--warn-dim);
-  color: var(--ink-muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.setup-alert::before,
-.error-alert::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--warn);
-}
-
-.error-alert {
-  border-color: var(--danger-dim);
-  background: var(--danger-dim);
-}
-
-.error-alert::before { background: var(--danger); }
-.setup-alert strong { color: var(--ink); }
-.setup-alert code { margin: 0 3px; color: var(--gold); }
-
 /* ---- house rules bar (privacy strip) ------------------------- */
 .house-rules {
   display: flex;
@@ -258,24 +224,698 @@ footer {
 }
 
 /* ============================================================
-   ===== LEGACY (replaced in Stage 2/3) =====
-   Upload card, progress card, stem mixer and history keep their
-   pre-redesign structure. The aliases below re-point the old
-   variable names at the new tokens; accent colors are swapped
-   from orange to neon/gold so nothing clashes with the shell.
-   All of this is deleted as each component is rebuilt.
+   ===== STAGE 2 — Upload flow & alerts (spec §3.2 / §3.7) =====
+   The "empty stage": choose-your-track card and its segmented
+   source control, drop zone, engine/quality pickers, rights
+   attestation, primary CTA and upload progress — plus the alert
+   and restore-status skins. Token-driven; no raw hex here.
    ============================================================ */
 
-:root {
-  --orange: var(--neon);
-  --orange-light: var(--neon-hot);
-  --muted: var(--ink-muted);
-  --faint: var(--ink-faint);
-  --line: var(--line-1);
-  --panel: var(--surface-1);
-  --panel-light: var(--surface-2);
-  --cream: var(--gold);
+/* ---- alerts: dim fill + slim colored rail (spec §3.7) -------- */
+.setup-alert,
+.error-alert {
+  position: relative;
+  overflow: hidden;
+  margin: -24px 0 28px;
+  padding: 13px 16px 13px 20px;
+  border: 1px solid var(--warn-dim);
+  border-radius: var(--r-md);
+  background: var(--warn-dim);
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  animation: alert-in var(--dur-med) var(--ease-out);
 }
+
+.setup-alert::before,
+.error-alert::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--warn);
+}
+
+.error-alert {
+  border-color: var(--danger-dim);
+  background: var(--danger-dim);
+}
+
+.error-alert::before { background: var(--danger); }
+
+/* mono micro heading on its own line, then 13px body */
+.setup-alert strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font: 500 10px/1.5 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.setup-alert code { margin: 0 3px; color: var(--gold); }
+
+/* ---- restore status: loading saved jobs --------------------- */
+.restore-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 90px;
+  color: var(--ink-muted);
+  font: 400 10px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: alert-in var(--dur-med) var(--ease-out);
+}
+
+.restore-status span {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--line-2);
+  border-top-color: var(--neon);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+/* ---- card heading: gold "01" well · eyebrow · display H2 ----- */
+.card-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.step-index {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  color: var(--gold);
+  background: var(--gold-dim);
+  box-shadow: var(--well-inset), 0 0 18px -8px var(--gold-glow);
+  font: 500 13px/1 var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.card-heading .eyebrow { margin-bottom: 6px; }
+
+.card-heading h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+/* ---- source tabs: pill segmented control w/ sliding glow ----- */
+.source-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 5px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  box-shadow: var(--well-inset);
+}
+
+.source-tabs button {
+  position: relative;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: var(--r-pill);
+  color: var(--ink-faint);
+  background: transparent;
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.source-tabs button:hover { color: var(--ink-muted); }
+.source-tabs button[aria-selected='true'] { color: var(--ink); }
+
+.tab-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 0 -2px 0 -0.5px var(--neon),
+    0 4px 16px -6px var(--neon-glow);
+}
+
+.tab-label {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- drop zone: the empty stage ------------------------------ */
+.drop-zone {
+  position: relative;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  overflow: hidden;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+  background-color: var(--surface-2);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 8px,
+    color-mix(in srgb, var(--gold) 4%, transparent) 8px,
+    color-mix(in srgb, var(--gold) 4%, transparent) 9px
+  );
+  box-shadow: var(--well-inset);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.drop-zone.dragging {
+  border-color: transparent;
+  background-color: var(--neon-dim);
+  transform: scale(1.01);
+}
+
+/* marching-ants dashed border (animated stroke-dashoffset).
+   Explicit calc() dimensions keep the SVG a fixed-size replaced
+   element, so the rect's 100% geometry resolves against it in
+   every engine (no reliance on CSS geometry props or stretch). */
+.drop-ants {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.drop-ants rect {
+  fill: none;
+  stroke: var(--neon);
+  stroke-width: 1.5;
+  stroke-dasharray: 7 6;
+  filter: drop-shadow(0 0 5px var(--neon-glow));
+}
+
+.drop-zone.dragging .drop-ants { opacity: 1; }
+.drop-zone.dragging .drop-ants rect { animation: marching-ants 480ms linear infinite; }
+
+.drop-zone input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.upload-icon,
+.file-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 18px;
+  border: 1px solid var(--neon);
+  border-radius: 50%;
+  color: var(--neon);
+  background: var(--neon-dim);
+  box-shadow:
+    0 0 26px -8px var(--neon-glow),
+    inset 0 0 14px -8px var(--neon-glow);
+}
+
+.file-icon {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: var(--gold-dim);
+  box-shadow:
+    0 0 26px -8px var(--gold-glow),
+    inset 0 0 14px -8px var(--gold-glow);
+}
+
+.drop-zone strong {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 7px;
+  max-width: 100%;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.drop-zone.has-file strong {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop-zone > span {
+  position: relative;
+  z-index: 1;
+  color: var(--ink-faint);
+  font: 400 10px/1.5 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.text-button {
+  position: relative;
+  z-index: 1;
+  margin-top: 16px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--neon);
+  background: transparent;
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.text-button:hover { color: var(--neon-hot); }
+
+/* ---- youtube source: matching well -------------------------- */
+.youtube-source {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 30px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: var(--well-inset);
+}
+
+.youtube-source label {
+  display: grid;
+  gap: 10px;
+}
+
+.youtube-source label > span {
+  color: var(--ink-muted);
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.youtube-source input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 15px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  background: var(--bg-0);
+  font: 400 12px var(--font-mono);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.youtube-source input::placeholder { color: var(--ink-faint); }
+.youtube-source input:focus {
+  border-color: var(--neon);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--neon-dim);
+}
+
+.youtube-source p {
+  margin: 14px 0 0;
+  color: var(--ink-faint);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ---- engine + quality radio cards --------------------------- */
+.engine-picker,
+.quality-picker {
+  min-width: 0;
+  margin: 24px 0 0;
+  padding: 22px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.engine-picker legend,
+.quality-picker legend {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.engine-picker legend small,
+.quality-picker legend small {
+  color: var(--ink-faint);
+  font: 400 9px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.engine-options,
+.quality-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.engine-option,
+.quality-option {
+  position: relative;
+  display: grid;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.engine-option { grid-template-columns: auto 1fr; }
+.quality-option { grid-template-columns: auto 1fr auto; }
+
+.engine-option:hover,
+.quality-option:hover { border-color: var(--line-2); }
+
+.engine-option.selected,
+.quality-option.selected {
+  border-color: color-mix(in srgb, var(--neon) 70%, transparent);
+  background: var(--neon-dim);
+}
+
+.engine-option > input,
+.quality-option > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.radio-mark {
+  width: 18px;
+  height: 18px;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  background-clip: content-box;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.engine-option.selected .radio-mark,
+.quality-option.selected .radio-mark {
+  border-color: var(--neon);
+  background-color: var(--neon);
+  box-shadow: 0 0 10px -1px var(--neon-glow);
+}
+
+.engine-option > input:focus-visible + .radio-mark,
+.quality-option > input:focus-visible + .radio-mark {
+  outline: 2px solid var(--neon);
+  outline-offset: 2px;
+}
+
+.engine-copy,
+.quality-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.engine-copy strong,
+.quality-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+/* gold mono badge chips (Recommended / Experimental / Current) */
+.engine-copy strong em,
+.quality-copy strong em {
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  color: var(--gold);
+  background: var(--gold-dim);
+  font: 500 8px/1 var(--font-mono);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.engine-copy small,
+.quality-copy small {
+  color: var(--ink-faint);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.quality-speed {
+  color: var(--ink-faint);
+  font: 400 8px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---- rights checkbox: custom square w/ spring pop ----------- */
+.rights-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  margin: 23px 0;
+  cursor: pointer;
+}
+
+.rights-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkmark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  color: var(--on-neon);
+  background: var(--surface-2);
+  box-shadow: var(--well-inset);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.checkmark svg {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.rights-check input:checked + .checkmark {
+  border-color: var(--neon);
+  background: var(--neon);
+  box-shadow: 0 0 14px -3px var(--neon-glow);
+  animation: check-pop var(--dur-med) var(--ease-out);
+}
+
+.rights-check input:checked + .checkmark svg { opacity: 1; }
+
+.rights-check input:focus-visible + .checkmark {
+  outline: 2px solid var(--neon);
+  outline-offset: 2px;
+}
+
+.rights-check > span:last-child { display: flex; flex-direction: column; gap: 3px; }
+.rights-check strong { color: var(--ink-muted); font-size: 12px; font-weight: 600; }
+.rights-check small { color: var(--ink-faint); font-size: 10px; line-height: 1.5; }
+
+/* ---- primary CTA: neon fill, outer glow, press squash ------- */
+.primary-button {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--r-md);
+  color: var(--on-neon);
+  background: var(--neon);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 8px 30px -6px var(--neon-glow);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--neon-hot);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 34px -6px var(--neon-glow);
+}
+
+.primary-button:disabled {
+  opacity: 0.35;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.primary-button > span { font-size: 17px; line-height: 0; }
+
+.button-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid color-mix(in srgb, var(--on-neon) 30%, transparent);
+  border-top-color: var(--on-neon);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+/* ---- upload progress: neon track w/ shimmer ----------------- */
+.upload-progress {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.upload-progress > div {
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+}
+
+.upload-progress > div span {
+  position: relative;
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--neon);
+  box-shadow: 0 0 10px -2px var(--neon-glow);
+  transition: width 120ms linear;
+}
+
+.upload-progress > div span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--ink) 35%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: progress-shimmer 1.3s ease-in-out infinite;
+}
+
+.upload-progress small {
+  color: var(--ink-faint);
+  font: 400 9px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+/* ---- stage 2 keyframes -------------------------------------- */
+@keyframes alert-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes marching-ants {
+  to { stroke-dashoffset: -13; }
+}
+
+@keyframes check-pop {
+  0% { transform: scale(0.8); }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes progress-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* ---- stage 2 responsive ------------------------------------- */
+@media (max-width: 680px) {
+  .drop-zone,
+  .youtube-source { min-height: 235px; padding: 20px; }
+
+  .engine-picker legend,
+  .quality-picker legend { display: block; }
+
+  .engine-picker legend small,
+  .quality-picker legend small { display: block; margin-top: 4px; }
+
+  .quality-option { grid-template-columns: auto 1fr; }
+  .quality-speed { grid-column: 2; }
+}
+
+/* ============================================================
+   ===== LEGACY (replaced in Stage 3) =====
+   Progress card, stem mixer and history keep their pre-redesign
+   structure, remapped onto the new tokens. The shared card base
+   + top light-line is genuine Neon Lounge chrome used by every
+   card (including the rebuilt upload card) and stays here until
+   Stage 3 lifts it out. All of this is deleted as each remaining
+   component is rebuilt.
+   ============================================================ */
 
 .upload-card,
 .progress-card,
@@ -302,7 +942,6 @@ footer {
   background: var(--card-topline);
 }
 
-.card-heading,
 .result-heading {
   display: flex;
   align-items: center;
@@ -310,20 +949,8 @@ footer {
   margin-bottom: 26px;
 }
 
-.card-heading > span {
-  align-self: stretch;
-  display: grid;
-  place-items: center;
-  width: 46px;
-  border-right: 1px solid var(--line-1);
-  color: var(--gold);
-  font: 500 12px var(--font-mono);
-}
-
-.card-heading .eyebrow,
 .result-heading .eyebrow { margin-bottom: 6px; }
 
-.card-heading h2,
 .result-heading h2,
 .progress-card h2,
 .failed-card h2 {
@@ -333,137 +960,6 @@ footer {
   font-weight: 650;
   line-height: 1.25;
   letter-spacing: -0.02em;
-}
-
-.source-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-  margin-bottom: 12px;
-  padding: 4px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-}
-
-.source-tabs button {
-  padding: 10px 12px;
-  border: 0;
-  border-radius: var(--r-sm);
-  color: var(--ink-faint);
-  background: transparent;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.source-tabs button.selected {
-  color: var(--ink);
-  background: var(--surface-3);
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.2);
-}
-
-.youtube-source {
-  min-height: 260px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 30px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-}
-
-.youtube-source label {
-  display: grid;
-  gap: 10px;
-  color: var(--ink-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.youtube-source input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 14px 15px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
-  color: var(--ink);
-  background: var(--bg-0);
-  font: 400 12px var(--font-mono);
-}
-
-.youtube-source input::placeholder { color: var(--ink-faint); }
-.youtube-source input:focus { border-color: var(--neon); outline: 0; }
-.youtube-source p {
-  margin: 14px 0 0;
-  color: var(--ink-faint);
-  font-size: 10px;
-  line-height: 1.6;
-}
-
-.drop-zone {
-  position: relative;
-  min-height: 260px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  overflow: hidden;
-  border: 1px dashed var(--line-2);
-  border-radius: var(--r-md);
-  background-color: var(--surface-2);
-  background-image: repeating-linear-gradient(135deg, transparent, transparent 7px, rgba(255, 255, 255, 0.012) 7px, rgba(255, 255, 255, 0.012) 8px);
-  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
-}
-
-.drop-zone.dragging {
-  border-color: var(--neon);
-  background-color: var(--neon-dim);
-}
-
-.drop-zone input[type='file'] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.upload-icon,
-.file-icon {
-  display: grid;
-  place-items: center;
-  width: 51px;
-  height: 51px;
-  margin-bottom: 19px;
-  border: 1px solid var(--neon);
-  border-radius: 50%;
-  color: var(--neon);
-  background: var(--neon-dim);
-  box-shadow: 0 0 22px -6px var(--neon-glow);
-  font: 400 23px var(--font-mono);
-}
-
-.file-icon {
-  border-color: var(--gold);
-  color: var(--gold);
-  background: var(--gold-dim);
-  box-shadow: 0 0 22px -6px var(--gold-glow);
-  font-family: Georgia, serif;
-}
-
-.drop-zone strong {
-  margin-bottom: 7px;
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.drop-zone > span {
-  color: var(--ink-faint);
-  font: 400 11px var(--font-mono);
-  text-align: center;
 }
 
 .secondary-button,
@@ -487,273 +983,6 @@ footer {
 }
 
 .secondary-button:hover { border-color: var(--line-2); transform: translateY(-1px); }
-
-.text-button {
-  margin-top: 17px;
-  padding: 4px;
-  color: var(--neon);
-  background: transparent;
-  font-size: 12px;
-}
-
-.engine-picker,
-.quality-picker {
-  min-width: 0;
-  margin: 24px 0 0;
-  padding: 22px 0 0;
-  border: 0;
-  border-top: 1px solid var(--line-1);
-}
-
-.engine-picker legend,
-.quality-picker legend {
-  width: 100%;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0;
-  color: var(--ink-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.engine-picker legend small,
-.quality-picker legend small {
-  color: var(--ink-faint);
-  font-size: 9px;
-  font-weight: 400;
-}
-
-.engine-options {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.engine-option {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 13px;
-  padding: 14px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color 150ms var(--ease-out), background 150ms var(--ease-out);
-}
-
-.engine-option:hover { border-color: var(--line-2); }
-.engine-option.selected {
-  border-color: rgba(255, 61, 99, 0.7);
-  background: rgba(255, 61, 99, 0.06);
-}
-
-.engine-option > input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.engine-option > input:focus-visible + .radio-mark {
-  outline: 2px solid var(--neon);
-  outline-offset: 2px;
-}
-
-.engine-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-.engine-copy strong {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-muted);
-  font-size: 11px;
-}
-.engine-copy strong em {
-  padding: 3px 5px;
-  border-radius: 4px;
-  color: var(--gold);
-  background: var(--gold-dim);
-  font: 500 7px var(--font-mono);
-  font-style: normal;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.engine-copy small {
-  color: var(--ink-faint);
-  font-size: 9px;
-  line-height: 1.5;
-}
-
-.quality-options {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.quality-option {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 13px;
-  padding: 14px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color 150ms var(--ease-out), background 150ms var(--ease-out);
-}
-
-.quality-option:hover { border-color: var(--line-2); }
-.quality-option.selected {
-  border-color: rgba(255, 61, 99, 0.7);
-  background: rgba(255, 61, 99, 0.06);
-}
-
-.quality-option > input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.radio-mark {
-  width: 17px;
-  height: 17px;
-  padding: 4px;
-  border: 1px solid var(--line-2);
-  border-radius: 50%;
-  background-clip: content-box;
-}
-
-.quality-option.selected .radio-mark,
-.engine-option.selected .radio-mark {
-  border-color: var(--neon);
-  background-color: var(--neon);
-  box-shadow: 0 0 10px -2px var(--neon-glow);
-}
-
-.quality-option > input:focus-visible + .radio-mark {
-  outline: 2px solid var(--neon);
-  outline-offset: 2px;
-}
-
-.quality-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.quality-copy strong { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: 11px; }
-.quality-copy strong em {
-  padding: 3px 5px;
-  border-radius: 4px;
-  color: var(--gold);
-  background: var(--gold-dim);
-  font: 500 7px var(--font-mono);
-  font-style: normal;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.quality-copy small { color: var(--ink-faint); font-size: 9px; line-height: 1.5; }
-.quality-speed {
-  color: var(--ink-faint);
-  font: 400 8px var(--font-mono);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.rights-check {
-  display: flex;
-  align-items: flex-start;
-  gap: 13px;
-  margin: 23px 0;
-  cursor: pointer;
-}
-
-.rights-check input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.checkmark {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-top: 1px;
-  border: 1px solid var(--line-2);
-  border-radius: 5px;
-  color: transparent;
-  background: var(--surface-2);
-  font-size: 12px;
-  transition: all 150ms var(--ease-out);
-}
-
-.rights-check input:checked + .checkmark {
-  color: var(--on-neon);
-  border-color: var(--neon);
-  background: var(--neon);
-  box-shadow: 0 0 14px -3px var(--neon-glow);
-}
-
-.rights-check input:focus-visible + .checkmark {
-  outline: 2px solid var(--neon);
-  outline-offset: 2px;
-}
-
-.rights-check > span:last-child { display: flex; flex-direction: column; gap: 3px; }
-.rights-check strong { color: var(--ink-muted); font-size: 12px; font-weight: 600; }
-.rights-check small { color: var(--ink-faint); font-size: 10px; line-height: 1.5; }
-
-.primary-button {
-  width: 100%;
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px 20px;
-  border-radius: var(--r-md);
-  color: var(--on-neon);
-  background: var(--neon);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: none;
-  box-shadow: 0 8px 30px -6px var(--neon-glow);
-  transition: background 150ms var(--ease-out), transform 150ms var(--ease-out), opacity 150ms var(--ease-out);
-}
-
-.primary-button:hover:not(:disabled) { background: var(--neon-hot); transform: translateY(-1px); }
-.primary-button:disabled { opacity: 0.35; box-shadow: none; cursor: not-allowed; }
-.primary-button > span { font-size: 18px; }
-
-.upload-progress {
-  display: grid;
-  gap: 7px;
-  margin-top: 12px;
-}
-
-.upload-progress > div {
-  height: 3px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--surface-3);
-}
-
-.upload-progress > div span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--neon);
-  transition: width 120ms linear;
-}
-
-.upload-progress small {
-  color: var(--ink-faint);
-  font: 400 9px var(--font-mono);
-  text-align: center;
-}
 
 .progress-card,
 .failed-card {
@@ -995,25 +1224,6 @@ input[type='range'] {
   text-underline-offset: 3px;
 }
 
-.restore-status {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 90px;
-  color: var(--ink-muted);
-  font: 400 10px var(--font-mono);
-}
-
-.restore-status span {
-  width: 12px;
-  height: 12px;
-  border: 1px solid var(--line-1);
-  border-top-color: var(--neon);
-  border-radius: 50%;
-  animation: spin 800ms linear infinite;
-}
-
 .history-card {
   margin-top: 34px;
   padding: 25px;
@@ -1121,18 +1331,11 @@ input[type='range'] {
 /* ---- legacy responsive --------------------------------------- */
 @media (max-width: 680px) {
   .upload-card, .result-card { padding: 20px; border-radius: var(--r-md); }
-  .drop-zone, .youtube-source { min-height: 235px; padding: 20px; }
   .progress-card, .failed-card { padding: 42px 18px; }
   .progress-readout { grid-template-columns: auto 1fr; }
   .progress-readout small { grid-column: 1 / -1; text-align: left; }
   .stage-list li { min-width: 0; flex: 1; font-size: 0; }
   .mixer-grid { grid-template-columns: 1fr; }
-  .engine-picker legend,
-  .quality-picker legend { display: block; }
-  .engine-picker legend small,
-  .quality-picker legend small { display: block; margin-top: 4px; }
-  .quality-option { grid-template-columns: auto 1fr; }
-  .quality-speed { grid-column: 2; }
   .transport { gap: 8px; padding: 13px; }
   .history-card { padding: 17px; }
   .history-row { grid-template-columns: auto minmax(0, 1fr); }

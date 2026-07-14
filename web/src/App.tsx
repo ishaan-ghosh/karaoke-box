@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Variants } from 'motion/react'
-import { ShieldIcon, WaveMark } from './components/icons'
+import { CheckIcon, NoteIcon, ShieldIcon, UploadIcon, WaveMark } from './components/icons'
 import './App.css'
 
 const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1]
@@ -882,7 +882,7 @@ function App() {
           >
           <section className="upload-card" aria-labelledby="upload-heading">
             <div className="card-heading">
-              <span>01</span>
+              <span className="step-index" aria-hidden="true">01</span>
               <div>
                 <p className="eyebrow">Source audio</p>
                 <h2 id="upload-heading">Choose your track</h2>
@@ -900,7 +900,15 @@ function App() {
                   setError('')
                 }}
               >
-                Upload a file
+                {sourceType === 'upload' && (
+                  <motion.span
+                    className="tab-indicator"
+                    layoutId="tab-indicator"
+                    aria-hidden="true"
+                    transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38 }}
+                  />
+                )}
+                <span className="tab-label">Upload a file</span>
               </button>
               <button
                 className={sourceType === 'youtube' ? 'selected' : ''}
@@ -912,7 +920,15 @@ function App() {
                   setError('')
                 }}
               >
-                YouTube URL
+                {sourceType === 'youtube' && (
+                  <motion.span
+                    className="tab-indicator"
+                    layoutId="tab-indicator"
+                    aria-hidden="true"
+                    transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38 }}
+                  />
+                )}
+                <span className="tab-label">YouTube URL</span>
               </button>
             </div>
 
@@ -937,9 +953,12 @@ function App() {
                   accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
                   onChange={(event) => chooseFile(event.target.files?.[0])}
                 />
+                <svg className="drop-ants" aria-hidden="true">
+                  <rect x="0" y="0" width="100%" height="100%" rx="11" />
+                </svg>
                 {file ? (
                   <>
-                    <div className="file-icon" aria-hidden="true">♫</div>
+                    <div className="file-icon" aria-hidden="true"><NoteIcon size={24} /></div>
                     <strong>{file.name}</strong>
                     <span>{formatBytes(file.size)}</span>
                     <button className="text-button" type="button" onClick={() => inputRef.current?.click()}>
@@ -948,7 +967,7 @@ function App() {
                   </>
                 ) : (
                   <>
-                    <div className="upload-icon" aria-hidden="true">↑</div>
+                    <div className="upload-icon" aria-hidden="true"><UploadIcon size={24} /></div>
                     <strong>Drop an audio file here</strong>
                     <span>MP3, WAV, M4A, FLAC, OGG, AAC or Opus · up to 250 MB</span>
                     <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
@@ -1055,24 +1074,28 @@ function App() {
                 checked={rightsConfirmed}
                 onChange={(event) => setRightsConfirmed(event.target.checked)}
               />
-              <span className="checkmark" aria-hidden="true">✓</span>
+              <span className="checkmark" aria-hidden="true"><CheckIcon size={13} /></span>
               <span>
                 <strong>I confirm I’m allowed to use this source</strong>
                 <small>{rightsAttestationText}</small>
               </span>
             </label>
 
-            <button
+            <motion.button
               className="primary-button"
               type="button"
               disabled={(sourceType === 'upload' ? !file : !youtubeUrl.trim()) || !rightsConfirmed || uploading || health?.ready === false}
               onClick={submit}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 480, damping: 32 }}
             >
               {uploading
                 ? sourceType === 'upload' ? `Uploading ${uploadProgress}%` : 'Starting YouTube ingest…'
                 : 'Fetch and separate'}
-              <span aria-hidden="true">→</span>
-            </button>
+              {uploading
+                ? <span className="button-spinner" aria-hidden="true" />
+                : <span aria-hidden="true">→</span>}
+            </motion.button>
             {uploading && sourceType === 'upload' && (
               <div className="upload-progress" aria-live="polite">
                 <div

@@ -4,7 +4,7 @@
 
 Phase 1C implementation is locally complete and routine validation passes. The implementation exposes **Kimberley Jensen MelBand RoFormer** as an optional experimental high-quality engine while all existing Demucs profiles remain unchanged and Demucs remains the default faster/current path.
 
-The candidate was selected because it was the strongest CPU-capable option with an explicit model-weight license and a pinned, reproducible source. The full permitted real-song/fixture listening gate is complete: the user made same-song A/B comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. MelBand is not production-ready or ready for Windows release until the remaining frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification pass. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+The candidate was selected because it was the strongest CPU-capable option with an explicit model-weight license and a pinned, reproducible source. The full permitted real-song/fixture listening gate is complete: the user made same-song A/B comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Frozen Windows build/smoke and one target-PC real-song full inference are complete at pushed commit `1c5bfb2db59868ec20bff02be0ba41c323041afc`, workflow run `29303479616`. The user installed that artifact smoothly on an older Windows laptop and completed one roughly 3-minute user-attested YouTube-to-karaoke MelBand stem separation, producing instrumental/vocal audio rather than an MP4, in about 30–40 minutes. Hardware, peak RAM/disk, setup-versus-cached timing, and exact elapsed time were not recorded, so this is compatibility evidence rather than a performance promise or minimum specification. MelBand is not production-ready or ready for release until packaged third-party notices are verified and a cached performance check covering the default 10-minute range records target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision. Broader clean-Windows release-matrix testing and signing remain separate work. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 Do not replace Demucs, change the meaning of `preserve`, `best`, or `standard`, enable a GPU path, or bundle the model in the installer. Do not dispatch Windows packaging without explicit approval.
 
@@ -44,6 +44,16 @@ The following measurements are from the committed application runtime at commit 
 The 20-minute run was intentionally aborted before inference after the user rejected sustained 100% CPU as unreasonable; no 20-minute benchmark result exists, and its temporary input was removed. These macOS development measurements are not Windows promises or a minimum-RAM recommendation.
 
 A current-app 30-second MelBand output and all three existing Demucs outputs were assembled under `/tmp/kb-phase1c-gates/listening/self-created-30s/` for user listening; these temporary artifacts are not repository files. The user subsequently completed the full permitted real-song/fixture listening gate with same-song comparisons against all three Demucs profiles and preferred MelBand on every test. Vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better.
+
+## Current Windows validation checkpoint
+
+The pushed checkpoint is commit `1c5bfb2db59868ec20bff02be0ba41c323041afc` on `main`. Windows workflow run [29303479616](https://github.com/ishaan-ghosh/karaoke-box/actions/runs/29303479616) succeeded. It passed 61 backend tests plus frontend checks, the CPU-only Torch reinstall, PyInstaller onedir build, packaged authenticated startup/health and no-weight/no-network internal separator probe, Inno Setup installer build, and artifact upload. The `KaraokeBox-Windows-x64` artifact is 383324580 compressed bytes and includes the portable onedir app plus installer; the MelBand checkpoint remains unbundled by design.
+
+The preceding run `29303065151` failed because Windows checkout converted the LF-only pinned reference YAML to CRLF. Commit `1c5bfb2` fixed `.gitattributes` to preserve exact pinned configuration bytes, and the succeeding run validates that fix.
+
+The user installed the new installer smoothly on the target older Windows laptop. One end-to-end packaged MelBand conversion of a roughly 3-minute user-attested YouTube track succeeded and produced karaoke-use audio (instrumental/vocal stem assets, not this MP4 renderer) in about 30–40 minutes. Hardware, peak RAM/disk, cached-versus-setup split, and exact timing were not recorded; this is compatibility evidence only, not a Windows performance promise or minimum specification. One initial YouTube transfer selected format 251 and failed with HTTP 403 after metadata succeeded; a different YouTube video subsequently worked end to end. The Python 3.10 deprecation output from pinned yt-dlp 2026.7.4 is nonfatal but noisy. Do not claim the 403 is fixed; change retry/actionable diagnostics only from reproducible evidence, and move the next Windows package to Python 3.11.
+
+The permanent CPU-only boundary remains in force. Do not add or enable CUDA, MPS, or DirectML despite NVIDIA hardware on the target laptop.
 
 ## Pinned model and license record
 
@@ -287,8 +297,9 @@ All workers must preserve the pre-existing documentation and implementation edit
 
 ## Release gates still pending
 
-The engine remains experimental and is not production-ready. The full permitted real-song/fixture listening gate is complete: the user made same-song A/B comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Before calling it production-ready:
+The engine remains experimental and is not production-ready. The full permitted real-song/fixture listening gate, frozen Windows build/smoke validation, and one target-PC real-song full inference are complete. Before calling it production-ready:
 
-1. Build and smoke the frozen separator worker/package on Windows x64, including performance checks for the default 10-minute supported range.
-2. Manually process a real permitted song on the target Windows PC.
-3. Confirm third-party notices are present in the packaged artifact.
+1. Confirm the packaged third-party notices are present in the artifact.
+2. Run a cached performance check covering the default 10-minute range and record target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision.
+
+Broader clean-Windows release-matrix testing and signing remain separate work. Future sessions must preserve current post-Phase-1C working-tree changes and keep Phase 1C architecture frozen; do not reset or resume feature implementation from only the pushed checkpoint. Keep the deferred maintenance items visible: `processor.py` can briefly publish `separating` before MelBand changes to `preparing`; the next Windows package should use Python 3.11; yt-dlp HTTP 403 handling/diagnostics should only change from reproducible evidence; and Node action plus Starlette/httpx warnings remain nonblocking.

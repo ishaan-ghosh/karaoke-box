@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import secrets
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -9,7 +11,8 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from PIL import Image
 
 from .config import (
     ALLOWED_SUFFIXES,
@@ -18,7 +21,9 @@ from .config import (
     MAX_UPLOAD_BYTES,
     SESSION_TOKEN,
 )
-from .jobs import ACTIVE_STATUSES, Job, JobManager, JobStore
+from .jobs import ACTIVE_STATUSES, KARAOKE_ACTIVE_STATUSES, KaraokeCommitConflict, Job, JobManager, JobStore
+from .karaoke import KaraokeProject, LineModel, VisualModel, background_path, load_project, search as search_lyrics, select_record, state_from_job
+from .lyrics import LyricsError
 from .processor import tool_status
 from .profiles import DEFAULT_QUALITY, SeparationQuality
 from .separators.catalog import (
@@ -72,8 +77,8 @@ def public_job(job: Job) -> dict[str, Any]:
     job_dir = job_store.job_dir(job.id)
     payload["assets"] = {
         name: f"/api/jobs/{job.id}/assets/{name}"
-        for name in ("instrumental", "vocals")
-        if (job_dir / f"{name}.wav").is_file()
+        for name in ("instrumental", "vocals", "karaoke")
+        if (job_dir / ("karaoke.mp4" if name == "karaoke" else f"{name}.wav")).is_file()
     }
     return payload
 
@@ -204,19 +209,19 @@ def get_job(job_id: str) -> dict[str, Any]:
 
 @app.get("/api/jobs/{job_id}/assets/{asset_name}")
 def get_asset(job_id: str, asset_name: str, download: bool = False) -> FileResponse:
-    if asset_name not in {"instrumental", "vocals"}:
+    if asset_name not in {"instrumental", "vocals", "karaoke"}:
         raise HTTPException(status_code=404, detail="Asset not found.")
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    path = job_store.job_dir(job_id) / f"{asset_name}.wav"
+    path = job_store.job_dir(job_id) / ("karaoke.mp4" if asset_name == "karaoke" else f"{asset_name}.wav")
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Asset is not ready.")
-    export_name = f"{Path(job.original_filename).stem}-{asset_name}.wav"
+    export_name = f"{Path(job.original_filename).stem}-karaoke.mp4" if asset_name == "karaoke" else f"{Path(job.original_filename).stem}-{asset_name}.wav"
     return FileResponse(
         path,
-        media_type="audio/wav",
+        media_type="video/mp4" if asset_name == "karaoke" else "audio/wav",
         filename=export_name if download else None,
         content_disposition_type="attachment" if download else "inline",
     )
@@ -229,7 +234,189 @@ def delete_job(job_id: str) -> None:
         raise HTTPException(status_code=404, detail="Job not found.")
     if job.status in ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail="Wait for the active job to finish.")
-    job_store.delete(job_id)
+    try:
+        job_store.delete(job_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _completed_job(job_id: str) -> Job:
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.status != "completed":
+        raise HTTPException(status_code=409, detail="Finish stem separation before creating a karaoke video.")
+    return job
+
+
+class LyricsSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=300)
+    artist: str = Field(min_length=1, max_length=300)
+    album: str = Field(default="", max_length=300)
+
+    @field_validator("title", "artist")
+    @classmethod
+    def reject_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Search fields cannot be blank.")
+        return value.strip()
+
+
+class LyricsSelectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    record_id: StrictInt = Field(gt=0)
+
+
+class KaraokeEditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lines: list[LineModel] = Field(min_length=1, max_length=1000)
+    offset_ms: StrictInt = Field(default=0, ge=-120_000, le=120_000)
+    title: str = Field(default="", max_length=300)
+    subtitle: str = Field(default="", max_length=300)
+    visual: VisualModel = Field(default_factory=VisualModel)
+
+
+@app.post("/api/jobs/{job_id}/lyrics/search")
+def lyrics_search(job_id: str, request: LyricsSearchRequest) -> list[dict[str, Any]]:
+    _completed_job(job_id)
+    try:
+        return search_lyrics(request.title.strip(), request.artist.strip(), request.album.strip())
+    except LyricsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/lyrics/select")
+def lyrics_select(job_id: str, request: LyricsSelectRequest) -> dict[str, Any]:
+    job = _completed_job(job_id)
+    if job.karaoke_status in KARAOKE_ACTIVE_STATUSES:
+        raise HTTPException(status_code=409, detail="Karaoke rendering is active.")
+    try:
+        try:
+            project = select_record(job_store.job_dir(job_id), request.record_id, persist=False)
+        except TypeError as exc:
+            if "persist" not in str(exc):
+                raise
+            # Keep compatibility with narrow test doubles and older adapters.
+            project = select_record(job_store.job_dir(job_id), request.record_id)
+        project, updated = job_store.commit_karaoke_revision(job_id, project)
+    except KaraokeCommitConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (TypeError, ValueError, LyricsError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Could not persist the selected lyrics.") from exc
+    return {"project": project.model_dump(), "state": state_from_job(updated).model_dump()}
+
+
+@app.get("/api/jobs/{job_id}/karaoke")
+def karaoke_get(job_id: str) -> dict[str, Any]:
+    job = _completed_job(job_id)
+    project = load_project(job_store.job_dir(job_id))
+    return {"project": project.model_dump() if project else None, "state": state_from_job(job).model_dump()}
+
+
+@app.post("/api/jobs/{job_id}/karaoke")
+def karaoke_save(job_id: str, request: KaraokeEditRequest) -> dict[str, Any]:
+    job = _completed_job(job_id)
+    if job.karaoke_status in KARAOKE_ACTIVE_STATUSES:
+        raise HTTPException(status_code=409, detail="Karaoke rendering is active.")
+    existing = load_project(job_store.job_dir(job_id))
+    if existing is None:
+        raise HTTPException(status_code=409, detail="Select synchronized lyrics first.")
+    try:
+        candidate = KaraokeProject(
+            record=existing.record,
+            fetched_at=existing.fetched_at,
+            revision=existing.revision,
+            lines=request.lines,
+            offset_ms=request.offset_ms,
+            title=request.title,
+            subtitle=request.subtitle,
+            visual=request.visual,
+        )
+        project, updated = job_store.commit_karaoke_revision(job_id, candidate)
+    except KaraokeCommitConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Could not persist the karaoke project.") from exc
+    return {"project": project.model_dump(), "state": state_from_job(updated).model_dump()}
+
+
+@app.post("/api/jobs/{job_id}/karaoke/background")
+async def karaoke_background(job_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+    _completed_job(job_id)
+    project = load_project(job_store.job_dir(job_id))
+    if project is None:
+        raise HTTPException(status_code=409, detail="Select synchronized lyrics first.")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=415, detail="Use a PNG, JPEG, or WebP background.")
+    job_dir = job_store.job_dir(job_id)
+    temporary_path: Path | None = None
+    try:
+        try:
+            with tempfile.NamedTemporaryFile(prefix=".karaoke-background-", suffix=".png", dir=job_dir, delete=False) as temporary:
+                temporary_path = Path(temporary.name)
+                total = 0
+                while chunk := await file.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > 10 * 1024 * 1024:
+                        raise HTTPException(status_code=413, detail="Background image is too large.")
+                    temporary.write(chunk)
+            with Image.open(temporary_path) as image:
+                if image.format not in {"PNG", "JPEG", "WEBP"} or image.width * image.height > 16_000_000 or image.width < 320 or image.height < 180:
+                    raise ValueError("Background dimensions or format are not supported.")
+                image.load()
+                converted = image.convert("RGB")
+            converted.save(temporary_path, format="PNG", optimize=True)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=415, detail="The background image is invalid.") from exc
+        finally:
+            await file.close()
+
+        candidate = project.model_copy(update={"visual": project.visual.model_copy(update={"background": "custom"})})
+        committed, updated = job_store.commit_karaoke_revision(job_id, candidate, background_temp=temporary_path)
+        temporary_path = None
+    except KaraokeCommitConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Could not persist the background change.") from exc
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return {"ready": True, "project": committed.model_dump(), "state": state_from_job(updated).model_dump()}
+
+
+@app.get("/api/jobs/{job_id}/karaoke/background")
+def karaoke_background_get(job_id: str) -> FileResponse:
+    _completed_job(job_id)
+    path = background_path(job_store.job_dir(job_id))
+    if path is None:
+        raise HTTPException(status_code=404, detail="No custom background is saved.")
+    return FileResponse(path)
+
+
+@app.post("/api/jobs/{job_id}/karaoke/render", status_code=202)
+def karaoke_render(job_id: str) -> dict[str, Any]:
+    _completed_job(job_id)
+    if load_project(job_store.job_dir(job_id)) is None:
+        raise HTTPException(status_code=409, detail="Select synchronized lyrics first.")
+    queued = job_store.queue_karaoke_render(job_id)
+    if queued is None:
+        raise HTTPException(status_code=409, detail="Karaoke rendering is already active.")
+    try:
+        job_manager.submit_render(job_id)
+    except Exception as exc:
+        job_store.rollback_karaoke_queue(job_id, error="Could not start the karaoke render. Try again.")
+        raise HTTPException(status_code=503, detail="Could not start the karaoke render. Try again.") from exc
+    return public_job(job_store.get(job_id) or queued)
 
 
 _frontend = web_dist_dir()

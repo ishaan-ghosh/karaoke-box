@@ -35,11 +35,11 @@ Store the attestation text/version, confirmation timestamp, and source type with
 
 ### Lyrics
 
-Do not scrape lyrics. Accept user-authored/licensed lyrics, public-domain lyrics, or lyrics from a licensed provider. Store provenance and license information.
+The current local Lyric Lab uses a fixed-host LRCLIB client and requires explicit user selection of synchronized results. It stores provider provenance and states that Karaoke Box makes no license claim for returned lyrics; it does not add a second lyrics-rights checkbox. User-authored/licensed, public-domain, or licensed-provider enforcement and a durable lyrics license field remain release work.
 
 ### Exports
 
-Every export should include a rights manifest identifying the composition, source recording, lyric source, licenses, attribution, and user attestation. For a file upload, record the original filename and user-supplied provenance. For YouTube ingest, also record the canonical URL, YouTube video ID, title, uploader/channel name and ID when available, and fetch timestamp. Uploader metadata establishes provenance only; it does not establish that the uploader or user owns the necessary rights.
+The current local karaoke MP4 stores the selected lyric provenance with the project but does not yet emit the future rights manifest. A later licensed-catalog/release gate must identify the composition, source recording, lyric source, licenses, attribution, and user attestation. For a file upload, record the original filename and user-supplied provenance. For YouTube ingest, also record the canonical URL, YouTube video ID, title, uploader/channel name and ID when available, and fetch timestamp. Uploader metadata establishes provenance only; it does not establish that the uploader or user owns the necessary rights.
 
 Do not label outputs “copyright-free” unless their rights actually establish that. Do not promise that YouTube, Instagram, or another platform will accept an upload without a claim.
 
@@ -57,17 +57,15 @@ Do not label outputs “copyright-free” unless their rights actually establish
 4. **Separate audio**
    - Run source separation to produce vocal and instrumental stems.
    - Let the user preview and adjust stem levels.
-5. **Prepare karaoke view**
-   - Import user-provided `.lrc` lyrics or enter lyrics manually.
-   - Edit line timestamps in a waveform-based editor.
-6. **Perform**
-   - Check microphone permissions and latency.
-   - Play the instrumental and synchronized lyrics.
-   - Record the microphone as a separate take.
-7. **Mix and export**
-   - Adjust backing/vocal levels and optional reverb/compression.
-   - Render WAV/M4A and optionally MP4 with a simple lyric background.
-   - Generate `rights-manifest.json` and an attribution text file containing the source provenance and attestation.
+5. **Prepare karaoke video**
+   - Search the fixed LRCLIB service and explicitly select synchronized lyrics.
+   - Edit line text/timestamps and visual settings; user `.lrc` import, untimed alignment, manual per-word timing, and waveform editing remain deferred.
+6. **Preview and render**
+   - Preview synchronized lyrics against the instrumental with an optional vocal guide.
+   - Render a local instrumental-audio karaoke MP4 while retaining lyric provenance in the versioned project.
+7. **Perform, mix, and broaden export (future)**
+   - Add microphone setup, latency calibration, and separate take recording.
+   - Add performance mixing, additional release-approved exports, and a rights/attribution manifest.
 
 ## 4. Recommended architecture
 
@@ -232,9 +230,21 @@ Implementation scope completed:
 - Add mocked engine/API/cache/progress/worker tests and short self-created array tests. Routine CI must not download the checkpoint or run full inference.
 - Run `npm test` and `npm run desktop:smoke`. Do not dispatch Windows packaging without explicit user approval.
 
-The full permitted real-song/fixture A/B listening gate is complete. The user made same-song comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Remaining release gates are frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and verification that packaged third-party notices are present. MelBand is not production-ready until these remaining gates pass. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+The full permitted real-song/fixture A/B listening gate is complete. The user made same-song comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Frozen Windows build/smoke and one target-PC real-song full inference are also complete: pushed commit `1c5bfb2db59868ec20bff02be0ba41c323041afc`, workflow run `29303479616`, passed 61 backend tests plus frontend checks, CPU-only Torch reinstall, PyInstaller onedir build, packaged authenticated startup/health and no-weight/no-network internal separator probe, Inno Setup installer, and artifact upload. The user installed that artifact smoothly and completed one roughly 3-minute user-attested YouTube-to-karaoke-use MelBand conversion (stem separation producing instrumental/vocal audio, not this MP4 renderer) on an older Windows laptop in about 30–40 minutes. Hardware, peak RAM/disk, setup-versus-cached timing, and exact elapsed time were not recorded, so this is compatibility evidence rather than a performance promise or minimum specification. Remaining release gates are packaged third-party-notice verification and a cached performance check covering the default 10-minute range with target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision. Broader clean-Windows release-matrix testing and signing remain separate work. MelBand is not production-ready until the remaining gates pass. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 **Separator-upgrade checkpoint:** users can choose the existing faster Demucs engine or the experimental MelBand RoFormer engine, with durable exact model metadata and the same preview/download outputs.
+
+### Phase 1D — local karaoke video studio (working-tree complete; line-timed MVP)
+
+- Search LRCLIB through a bounded fixed-host client and require explicit synchronized-result selection.
+- Persist versioned lyric projects and canonical custom backgrounds through revision-checked compare-and-commit with rollback on handled persistence failure.
+- Provide dirty/stale state, line timing/style edits, synchronized instrumental/vocal-guide preview, and reload-safe active-render polling.
+- Serialize rendering with separation and atomically produce local 1920×1080/30fps H.264/AAC karaoke MP4s while preserving prior output on failure and cleaning partial/scratch artifacts.
+- Use bundled provenance-recorded OFL fonts with tested Basic Latin, smart-punctuation fallback, and a bounded symbol set.
+- Local acceptance is 124 backend tests, 8 Vitest tests plus oxlint/TypeScript/Vite build, offline npm install, desktop development smoke, an accepted one-second generated MP4 fixture, and fresh Sol backend/frontend `ACCEPT` gates. See `docs/KARAOKE_VIDEO.md` for exact evidence and caveats.
+- Untimed alignment, user `.lrc` import, manual per-word/waveform editing, performance recording/mixing, rights manifests, and Windows renderer packaging remain future work.
+
+**Karaoke-video checkpoint:** a completed local stem job can become an explicitly selected, line-edited, locally rendered karaoke MP4 without claiming lyric licensing or Windows package validation.
 
 ### Phase 2 — desktop runtime
 
@@ -247,21 +257,21 @@ The full permitted real-song/fixture A/B listening gate is complete. The user ma
 ### Phase 3 — Windows package
 
 - Maintain the PyInstaller onedir spec with CPU-only PyTorch, Demucs, optional MelBand runtime, `yt-dlp`, frontend assets, and bundled FFmpeg tools; do not bundle the MelBand checkpoint.
-- Add or run the GitHub Actions Windows build and packaged startup smoke test to verify all required commands without fetching live media or model weights; Phase 1C's no-weight/no-network probe is already part of desktop smoke.
+- The current GitHub Actions Windows build and packaged startup smoke test passed at commit `1c5bfb2db59868ec20bff02be0ba41c323041afc` in run `29303479616`, including the no-weight/no-network separator probe; the artifact includes the portable onedir app and installer while leaving the MelBand checkpoint unbundled.
 - Create an Inno Setup per-user installer with WebView2 detection/bootstrap.
-- Test on clean Windows 10/11 x64, including Unicode paths, Defender behavior, network failures, sleep/wake, and uninstall/upgrade.
+- Continue the broader clean Windows 10/11 x64 release matrix separately, including Unicode paths, Defender behavior, network failures, sleep/wake, and uninstall/upgrade; one target older Windows laptop has already completed a real packaged MelBand inference.
 - Add Authenticode signing before broad public distribution.
 
 ### Phase 4 — lyrics and performance
 
-- Add `.lrc` import, manual editing, and timestamp controls.
-- Build the karaoke player.
+- Add user `.lrc` import, untimed alignment, manual per-word timing, and waveform editing beyond the implemented line-timing controls.
+- Build a performance-mode karaoke player beyond the implemented editor preview.
 - Add microphone setup, latency calibration, and separate take recording.
 
 ### Phase 5 — mixing and export
 
 - Add mix controls and worker-side audio rendering.
-- Add simple lyric-video rendering.
+- Extend the implemented line-timed MP4 renderer with mixed-performance audio and additional release-approved export formats.
 - Generate rights and attribution manifests, including source-specific provenance and the versioned user attestation.
 - For YouTube sources, include the video ID and uploader/channel metadata without presenting those fields as proof of rights.
 - Consider licensed catalog or platform upload integrations only after rights review; never promise claim-free uploads.
@@ -280,7 +290,7 @@ The full permitted real-song/fixture A/B listening gate is complete. The user ma
 1. macOS/Apple Silicon remains the development environment.
 2. Windows 10/11 x64 is the primary packaged runtime and must be built/tested on Windows.
 3. Single-user desktop application; no hosted authentication is required initially.
-4. Audio-only export for the initial product.
+4. Instrumental WAV remains the stem export; Phase 1D adds local instrumental-audio karaoke MP4 rendering, while mixed-performance audio/video export remains deferred.
 5. Supported source paths are an audio-file upload and an individual YouTube video fetched with `yt-dlp`; both require the same source-neutral rights attestation.
 6. YouTube availability and successful `yt-dlp` ingest confer no rights and make no claim about permitted reuse.
 7. React + TypeScript + Vite UI with Python/FastAPI, pywebview, JSON job metadata, and separate `yt-dlp`/Demucs child-process adapters.
@@ -293,6 +303,6 @@ The full permitted real-song/fixture A/B listening gate is complete. The user ma
 
 The file-upload and YouTube source vertical slices are implemented: both require the shared versioned attestation; YouTube jobs validate an individual HTTPS URL, resolve bounded provenance, preflight duration/size, fetch the best available audio source with fixed pinned `yt-dlp` options, retain sanitized diagnostics, and hand the source to the source-neutral FFprobe/selected-separator pipeline. Both paths include byte/status progress, reload-safe polling and active-job restoration, local result history, synchronized stem playback, level controls, explicit cleanup, and instrumental WAV download. The desktop runtime and Windows packaging adapters include the `yt-dlp` and generic separator worker entry points.
 
-Phase 1C implementation is locally complete and verified by 61 backend tests, frontend lint/build, and desktop smoke. The optional MelBand engine remains experimental and not production-ready. The checkpoint source, revision, expected size, SHA-256, MIT license record, committed-runtime CPU/RAM measurements, rejected alternatives, adapter boundary, worker protocol, model-cache behavior, API fields, UI behavior, tests, and packaging probe are recorded in `docs/SEPARATOR_UPGRADE.md`. The bounded Luna implementation and Sol planning/review instructions are in `docs/SEPARATOR_SUBAGENT_PROMPTS.md`.
+Phase 1C remains locally complete, frozen in architecture, experimental, and not production-ready. Its exact model/license record, historical 61-test Windows checkpoint, run `29303479616`, target-laptop stem-audio evidence, and pending packaged-notice/default-10-minute-performance gates remain recorded in `docs/SEPARATOR_UPGRADE.md` and must not be reinterpreted as Karaoke Video Studio evidence.
 
-Routine CI remains mocked and must not depend on live third-party YouTube media, large model downloads, or full separator inference. The full permitted real-song/fixture A/B listening gate is complete: same-song comparisons against all three Demucs profiles resulted in a MelBand preference on every test, with negligible vocal residual aside from faint static, effectively imperceptible instrument damage, and substantially better karaoke usefulness. Release remains gated by frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+Phase 1D is complete in the local working tree as a line-timed MVP. The current whole-tree validation is 124 backend tests, 8 Vitest tests plus oxlint/TypeScript/Vite build, offline npm install, desktop development smoke, the accepted generated one-second H.264/AAC fixture, and final fresh Sol backend/frontend `ACCEPT` gates. Exact implementation behavior, fixture details, evidence limits, and deferred work are centralized in `docs/KARAOKE_VIDEO.md`. Windows renderer packaging and manual browser/accessibility validation remain outstanding.

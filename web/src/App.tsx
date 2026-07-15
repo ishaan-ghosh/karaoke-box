@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type RefObject } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Variants } from 'motion/react'
 import {
@@ -9,6 +9,7 @@ import {
   PlayIcon,
 } from './components/icons'
 import { Eq } from './components/Eq'
+import { KaraokeStudio } from './components/KaraokeStudio'
 import './App.css'
 
 const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1]
@@ -76,7 +77,14 @@ type Job = {
   separator_model: string
   created_at: string
   updated_at: string
-  assets: Partial<Record<'instrumental' | 'vocals', string>>
+  karaoke_status: 'empty' | 'draft' | 'queued' | 'rendering' | 'completed' | 'failed'
+  karaoke_progress: number
+  karaoke_message: string
+  karaoke_error: string | null
+  karaoke_project_revision: number | null
+  karaoke_rendered_revision: number | null
+  karaoke_updated_at: string | null
+  assets: Partial<Record<'instrumental' | 'vocals' | 'karaoke', string>>
 }
 
 const activeStatuses = new Set<JobStatus>([
@@ -88,6 +96,9 @@ const activeStatuses = new Set<JobStatus>([
   'finalizing',
 ])
 const currentJobStorageKey = 'karaoke-box.current-job-id'
+function isJobActive(job: Pick<Job, 'status' | 'karaoke_status'>) {
+  return activeStatuses.has(job.status) || job.karaoke_status === 'queued' || job.karaoke_status === 'rendering'
+}
 const defaultSeparatorEngine: SeparatorEngine = 'demucs'
 const melbandModelId = 'kimberley_melband_roformer_v1'
 const rightsAttestationVersion = '1'
@@ -180,6 +191,13 @@ function normalizeJob(payload: unknown): Job {
     quality,
     separator_engine: engine,
     separator_model: separatorModel,
+    karaoke_status: record.karaoke_status === 'draft' || record.karaoke_status === 'queued' || record.karaoke_status === 'rendering' || record.karaoke_status === 'completed' || record.karaoke_status === 'failed' ? record.karaoke_status : 'empty',
+    karaoke_progress: typeof record.karaoke_progress === 'number' ? record.karaoke_progress : 0,
+    karaoke_message: typeof record.karaoke_message === 'string' ? record.karaoke_message : '',
+    karaoke_error: typeof record.karaoke_error === 'string' ? record.karaoke_error : null,
+    karaoke_project_revision: typeof record.karaoke_project_revision === 'number' ? record.karaoke_project_revision : null,
+    karaoke_rendered_revision: typeof record.karaoke_rendered_revision === 'number' ? record.karaoke_rendered_revision : null,
+    karaoke_updated_at: typeof record.karaoke_updated_at === 'string' ? record.karaoke_updated_at : null,
   } as Job
 }
 
@@ -348,7 +366,7 @@ function Platter({
   )
 }
 
-function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
+function StemMixer({ job, reduce, onKaraoke, returnRef }: { job: Job; reduce: boolean | null; onKaraoke: () => void; returnRef: RefObject<HTMLButtonElement | null> }) {
   const instrumentalRef = useRef<HTMLAudioElement>(null)
   const vocalsRef = useRef<HTMLAudioElement>(null)
   const frameRef = useRef<number | null>(null)
@@ -592,6 +610,9 @@ function StemMixer({ job, reduce }: { job: Job; reduce: boolean | null }) {
           <DownloadIcon size={16} />
           Download instrumental WAV
         </a>
+        <button ref={returnRef} className="start-button" type="button" onClick={onKaraoke}>
+          Create karaoke video
+        </button>
       </div>
     </>
   )
@@ -687,6 +708,7 @@ function ProcessDisplay({ job, reduce }: { job: Job; reduce: boolean | null }) {
 function SetList({
   jobs,
   currentJobId,
+  karaokeDirty,
   restoring,
   reduce,
   onOpen,
@@ -694,6 +716,7 @@ function SetList({
 }: {
   jobs: Job[]
   currentJobId?: string
+  karaokeDirty: boolean
   restoring: boolean
   reduce: boolean | null
   onOpen: (job: Job) => void
@@ -718,7 +741,7 @@ function SetList({
         ) : (
           <AnimatePresence>
             {jobs.map((historyJob, index) => {
-              const active = activeStatuses.has(historyJob.status)
+              const active = isJobActive(historyJob)
               const selected = historyJob.id === currentJobId
               const engineLabel = jobEngineLabel(historyJob)
               const ticket = String(index + 1).padStart(2, '0')
@@ -742,7 +765,17 @@ function SetList({
                   <span className="slot-meta">{engineLabel} · {formatJobDate(historyJob.created_at)}</span>
                   <span className={`slot-status ${active ? 'active' : historyJob.status}`}>
                     {active ? <Eq size="sm" /> : <i aria-hidden="true" />}
-                    {active ? `${historyJob.progress}% processing` : historyJob.status}
+                    {historyJob.karaoke_status === 'failed'
+                      ? 'video failed'
+                      : active
+                        ? (historyJob.karaoke_status === 'rendering' || historyJob.karaoke_status === 'queued' ? `${historyJob.karaoke_progress}% video` : `${historyJob.progress}% processing`)
+                        : selected && karaokeDirty
+                          ? 'video stale'
+                          : historyJob.karaoke_rendered_revision !== null && historyJob.karaoke_project_revision !== null && historyJob.karaoke_rendered_revision !== historyJob.karaoke_project_revision
+                            ? 'video stale'
+                            : historyJob.karaoke_status === 'completed' && historyJob.karaoke_rendered_revision !== null && historyJob.karaoke_project_revision !== null && historyJob.karaoke_rendered_revision === historyJob.karaoke_project_revision
+                            ? 'video ready'
+                            : historyJob.status}
                   </span>
                   <div className="slot-actions">
                     {historyJob.status === 'completed' && historyJob.assets.instrumental && (
@@ -769,6 +802,7 @@ function SetList({
 
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
+  const karaokeReturnRef = useRef<HTMLButtonElement>(null)
   const [sourceType, setSourceType] = useState<SourceType>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [youtubeUrl, setYoutubeUrl] = useState('')
@@ -784,6 +818,16 @@ function App() {
   const [history, setHistory] = useState<Job[]>([])
   const [restoringJobs, setRestoringJobs] = useState(true)
   const [error, setError] = useState('')
+  const [karaokeOpen, setKaraokeOpen] = useState(false)
+  const [karaokeDirty, setKaraokeDirty] = useState(false)
+  const handleKaraokeUpdate = useCallback((update: Partial<Job>) => {
+    setJob((current) => {
+      if (!current) return current
+      const merged = normalizeJob({ ...current, ...update })
+      setHistory((savedJobs) => upsertJob(savedJobs, merged))
+      return merged
+    })
+  }, [])
 
   useEffect(() => {
     fetch(apiUrl('/api/health'))
@@ -808,9 +852,10 @@ function App() {
         const savedId = localStorage.getItem(currentJobStorageKey)
         const resumable = savedId
           ? savedJobs.find(({ id }) => id === savedId)
-          : savedJobs.find(({ status }) => activeStatuses.has(status))
+          : savedJobs.find(isJobActive)
         if (resumable) {
           setJob(resumable)
+          if (resumable.karaoke_status === 'queued' || resumable.karaoke_status === 'rendering') setKaraokeOpen(true)
         } else if (savedId) {
           localStorage.removeItem(currentJobStorageKey)
         }
@@ -831,20 +876,30 @@ function App() {
   }, [job])
 
   useEffect(() => {
-    if (!job || !activeStatuses.has(job.status)) return
-
-    const timeout = window.setTimeout(async () => {
+    if (!job || !isJobActive(job)) return
+    let cancelled = false
+    let timeout = 0
+    const schedule = () => {
+      if (!cancelled) timeout = window.setTimeout(poll, 1000)
+    }
+    const poll = async () => {
       try {
         const response = await fetch(apiUrl(`/api/jobs/${job.id}`))
         if (!response.ok) throw new Error(await responseError(response))
         const updatedJob = normalizeJob(await response.json())
+        if (cancelled) return
         setJob(updatedJob)
         setHistory((savedJobs) => upsertJob(savedJobs, updatedJob))
+        setError('')
+        if (isJobActive(updatedJob)) schedule()
       } catch (pollError) {
+        if (cancelled) return
         setError(pollError instanceof Error ? pollError.message : 'Could not read job status.')
+        schedule()
       }
-    }, 1000)
-    return () => window.clearTimeout(timeout)
+    }
+    timeout = window.setTimeout(poll, 1000)
+    return () => { cancelled = true; window.clearTimeout(timeout) }
   }, [job])
 
   const chooseFile = (nextFile?: File) => {
@@ -886,6 +941,8 @@ function App() {
   const startOver = () => {
     localStorage.removeItem(currentJobStorageKey)
     setJob(null)
+    setKaraokeOpen(false)
+    setKaraokeDirty(false)
     setSourceType('upload')
     setFile(null)
     setYoutubeUrl('')
@@ -896,7 +953,15 @@ function App() {
     if (inputRef.current) inputRef.current.value = ''
   }
 
+  const closeKaraoke = () => {
+    setKaraokeOpen(false)
+    setKaraokeDirty(false)
+    window.requestAnimationFrame(() => karaokeReturnRef.current?.focus())
+  }
+
   const openStoredJob = (storedJob: Job) => {
+    setKaraokeDirty(false)
+    setKaraokeOpen(storedJob.karaoke_status === 'queued' || storedJob.karaoke_status === 'rendering')
     setJob(storedJob)
     localStorage.setItem(currentJobStorageKey, storedJob.id)
     setError('')
@@ -921,7 +986,7 @@ function App() {
     : []
 
   const reduce = useReducedMotion()
-  const isProcessing = !!job && activeStatuses.has(job.status)
+  const isProcessing = !!job && isJobActive(job)
   const startDisabled =
     (sourceType === 'upload' ? !file : !youtubeUrl.trim()) || !rightsConfirmed || uploading || health?.ready === false
 
@@ -935,11 +1000,21 @@ function App() {
         : restoringJobs
           ? { text: 'Reading local library…' }
           : isProcessing && job
-            ? { text: `${job.message} · ${job.progress}%` }
+            ? job.karaoke_status === 'queued' || job.karaoke_status === 'rendering'
+              ? { text: `${job.karaoke_message || 'Rendering karaoke video'} · ${job.karaoke_progress}%` }
+              : { text: `${job.message} · ${job.progress}%` }
             : job?.status === 'failed'
               ? { text: 'Processing stopped · see stage readout', tone: 'red' }
               : job?.status === 'completed'
-                ? { text: `Ready · ${jobDisplayName(job)}` }
+                ? job.karaoke_status === 'failed'
+                  ? { text: 'Karaoke render failed · open Lyric Lab', tone: 'red' }
+                  : job.karaoke_status === 'queued' || job.karaoke_status === 'rendering'
+                    ? { text: `${job.karaoke_message || 'Rendering karaoke video'} · ${job.karaoke_progress}%` }
+                    : karaokeDirty || (job.karaoke_rendered_revision !== null && job.karaoke_project_revision !== null && job.karaoke_rendered_revision !== job.karaoke_project_revision)
+                      ? { text: 'Karaoke video is stale · open Lyric Lab', tone: 'amber' }
+                      : job.karaoke_status === 'completed' && job.karaoke_rendered_revision !== null && job.karaoke_project_revision !== null && job.karaoke_rendered_revision === job.karaoke_project_revision
+                        ? { text: 'Karaoke video ready · open Lyric Lab' }
+                        : { text: karaokeOpen ? 'Lyric Lab · tune then render' : `Ready · ${jobDisplayName(job)}` }
                 : { text: 'Ready · Load a track to begin' }
 
   /* Shared stage-view swap (the machine morphs; it never navigates). */
@@ -994,11 +1069,12 @@ function App() {
           </div>
         </motion.header>
 
-        <div className="deck-body">
+        <div className={`deck-body${karaokeOpen ? ' deck-body--karaoke' : ''}`}>
           <motion.div className="rail-shell" {...regionFade(0.15)}>
             <SetList
               jobs={history}
               currentJobId={job?.id}
+              karaokeDirty={karaokeDirty}
               restoring={restoringJobs}
               reduce={reduce}
               onOpen={openStoredJob}
@@ -1143,7 +1219,13 @@ function App() {
                 </motion.div>
               )}
 
-              {job?.status === 'completed' && (
+              {job?.status === 'completed' && karaokeOpen && (
+                <motion.div className="stage-view stage-view--wide" key="karaoke" variants={stageVariants} initial="initial" animate="animate" exit="exit">
+                  <KaraokeStudio job={job} apiUrl={apiUrl} onClose={closeKaraoke} onUpdated={handleKaraokeUpdate} onDirtyChange={setKaraokeDirty} />
+                </motion.div>
+              )}
+
+              {job?.status === 'completed' && !karaokeOpen && (
                 <motion.div
                   className="stage-view"
                   key="result"
@@ -1152,7 +1234,7 @@ function App() {
                   animate="animate"
                   exit="exit"
                 >
-                  <StemMixer job={job} reduce={reduce} />
+                  <StemMixer job={job} reduce={reduce} onKaraoke={() => setKaraokeOpen(true)} returnRef={karaokeReturnRef} />
                 </motion.div>
               )}
             </AnimatePresence>

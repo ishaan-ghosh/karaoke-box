@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import threading
@@ -35,6 +36,15 @@ JobStatus = Literal[
     "failed",
 ]
 ACTIVE_STATUSES = {"queued", "ingesting", "preparing", "validating", "separating", "finalizing"}
+KARAOKE_ACTIVE_STATUSES = {"queued", "rendering"}
+
+
+class KaraokeCommitConflict(RuntimeError):
+    """The project changed while a karaoke mutation was being prepared."""
+
+
+class KaraokeCommitError(RuntimeError):
+    """A karaoke mutation could not be committed atomically."""
 
 
 def utc_now() -> str:
@@ -71,6 +81,13 @@ class Job(BaseModel):
     quality: SeparationQuality = DEFAULT_QUALITY
     separator_engine: SeparatorEngine = DEFAULT_SEPARATOR_ENGINE
     separator_model: str
+    karaoke_status: Literal["empty", "draft", "queued", "rendering", "completed", "failed"] = "empty"
+    karaoke_progress: int = 0
+    karaoke_message: str = ""
+    karaoke_error: str | None = None
+    karaoke_project_revision: int | None = None
+    karaoke_rendered_revision: int | None = None
+    karaoke_updated_at: str | None = None
     created_at: str
     updated_at: str
 
@@ -176,15 +193,126 @@ class JobStore:
         jobs.sort(key=lambda job: job.created_at, reverse=True)
         return jobs[:limit]
 
+    def has_active_jobs(self) -> bool:
+        """Return whether any persisted job currently blocks desktop shutdown."""
+        with self._lock:
+            for path in self.jobs_dir.glob("*/job.json"):
+                job = self.get(path.parent.name)
+                if job is not None and (job.status in ACTIVE_STATUSES or job.karaoke_status in KARAOKE_ACTIVE_STATUSES):
+                    return True
+        return False
+
     def delete(self, job_id: str) -> bool:
         with self._lock:
             job = self.get(job_id)
             if job is None:
                 return False
-            if job.status in ACTIVE_STATUSES:
+            if job.status in ACTIVE_STATUSES or job.karaoke_status in KARAOKE_ACTIVE_STATUSES:
                 raise RuntimeError("An active job cannot be deleted.")
             shutil.rmtree(self.job_dir(job_id))
             return True
+
+    def queue_karaoke_render(self, job_id: str) -> Job | None:
+        """Atomically transition a completed job into the render queue."""
+        with self._lock:
+            job = self.get(job_id)
+            if job is None or job.karaoke_status in KARAOKE_ACTIVE_STATUSES:
+                return None
+            queued = job.model_copy(update={
+                "karaoke_status": "queued",
+                "karaoke_progress": 0,
+                "karaoke_message": "Waiting to render karaoke video",
+                "karaoke_error": None,
+                "karaoke_updated_at": utc_now(),
+            })
+            self._write(queued)
+            return queued
+
+    def commit_karaoke_revision(self, job_id: str, project: Any, *, background_temp: Path | None = None) -> tuple[Any, Job]:
+        """Commit a project, optional PNG install, and job state under one lock.
+
+        Expensive provider/image work is deliberately performed before this method. The
+        final active-state check and all durable writes happen together, so an edit can
+        never hide a queued/rendering child process.
+        """
+        from .karaoke import load_project, project_path
+
+        with self._lock:
+            job = self.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.karaoke_status in KARAOKE_ACTIVE_STATUSES:
+                raise KaraokeCommitConflict("Karaoke rendering is active.")
+            job_dir = self.job_dir(job_id)
+            metadata = self._metadata_path(job_id)
+            project_file = project_path(job_dir)
+            persisted_project = load_project(job_dir)
+            expected_revision = persisted_project.revision if persisted_project is not None else 1
+            if getattr(project, "revision", None) != expected_revision:
+                raise KaraokeCommitConflict("The karaoke project changed while this revision was prepared.")
+            old_metadata = metadata.read_bytes() if metadata.is_file() else None
+            old_project = project_file.read_bytes() if project_file.is_file() else None
+            old_backgrounds = {
+                path: path.read_bytes()
+                for path in job_dir.glob("karaoke-background.*")
+                if path.is_file()
+            }
+            current = self.get(job_id)
+            revision = (current and getattr(current, "karaoke_project_revision", None)) or getattr(project, "revision", 1)
+            revision = max(int(revision or 1), int(getattr(project, "revision", 1))) + 1
+            committed_project = project.model_copy(update={"revision": revision})
+            target = job_dir / "karaoke-background.png"
+            temporary: Path | None = None
+            try:
+                if background_temp is not None:
+                    os.replace(background_temp, target)
+                    for suffix in (".jpg", ".jpeg", ".webp"):
+                        (job_dir / f"karaoke-background{suffix}").unlink(missing_ok=True)
+                temporary = project_file.with_name(f".{project_file.name}.{id(committed_project)}.tmp")
+                temporary.write_text(committed_project.model_dump_json(indent=2), encoding="utf-8")
+                temporary.replace(project_file)
+                updated = job.model_copy(update={
+                    "karaoke_status": "draft",
+                    "karaoke_progress": 0,
+                    "karaoke_message": "Karaoke draft ready",
+                    "karaoke_error": None,
+                    "karaoke_project_revision": committed_project.revision,
+                    "karaoke_updated_at": utc_now(),
+                })
+                self._write(updated)
+                return committed_project, updated
+            except Exception as exc:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+                for path in job_dir.glob("karaoke-background.*"):
+                    path.unlink(missing_ok=True)
+                for path, data in old_backgrounds.items():
+                    path.write_bytes(data)
+                if old_project is None:
+                    project_file.unlink(missing_ok=True)
+                else:
+                    project_file.write_bytes(old_project)
+                if old_metadata is not None:
+                    metadata.write_bytes(old_metadata)
+                metadata.with_suffix(".tmp").unlink(missing_ok=True)
+                raise KaraokeCommitError("Could not persist the karaoke revision.") from exc
+
+    def rollback_karaoke_queue(self, job_id: str, message: str = "Karaoke draft ready", error: str | None = None) -> Job:
+        with self._lock:
+            job = self.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.karaoke_status != "queued":
+                return job
+            updated = job.model_copy(update={
+                "karaoke_status": "draft",
+                "karaoke_progress": 0,
+                "karaoke_message": message,
+                "karaoke_error": error,
+                "karaoke_updated_at": utc_now(),
+            })
+            self._write(updated)
+            return updated
 
     def _write(self, job: Job) -> None:
         path = self._metadata_path(job.id)
@@ -207,6 +335,15 @@ class JobStore:
                     eta_seconds=None,
                     error="The local API stopped before this job finished. Please start it again.",
                 )
+            elif job.karaoke_status in KARAOKE_ACTIVE_STATUSES:
+                self.update(
+                    job.id,
+                    karaoke_status="failed",
+                    karaoke_progress=job.karaoke_progress,
+                    karaoke_message="Karaoke rendering was interrupted",
+                    karaoke_error="The local API stopped before rendering finished. Please try again.",
+                    karaoke_updated_at=utc_now(),
+                )
 
 
 class JobManager:
@@ -220,9 +357,51 @@ class JobManager:
             raise RuntimeError("The job manager is shutting down.")
         self._executor.submit(self._run, job_id)
 
+    def submit_render(self, job_id: str) -> None:
+        if self._shutdown:
+            raise RuntimeError("The job manager is shutting down.")
+        self._executor.submit(self._run_render, job_id)
+
     def shutdown(self) -> None:
         self._shutdown = True
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _render_error(self, exc: Exception) -> str:
+        message = str(exc).splitlines()[0][:400]
+        safe_messages = {
+            "FFmpeg is required to render a karaoke video.",
+            "ffprobe is required to render a karaoke video.",
+            "The instrumental WAV is not available.",
+            "ffprobe timed out while reading instrumental duration.",
+            "Could not read instrumental duration.",
+            "Instrumental duration is outside the supported range.",
+            "FFmpeg encoder probe timed out.",
+            "This FFmpeg build does not include the required libx264 encoder.",
+            "Choose and upload a custom background image before rendering.",
+            "This karaoke project has too many render states.",
+            "Not enough free disk space for a karaoke render.",
+            "Save a karaoke project before rendering.",
+            "FFmpeg could not render the karaoke video. See karaoke-render.log.",
+        }
+        if message in safe_messages:
+            return message
+        return "Karaoke render failed. See karaoke-render.log for local diagnostics."
+
+    def _run_render(self, job_id: str) -> None:
+        from .karaoke import load_project, render_job
+
+        job = self.store.get(job_id)
+        if job is None:
+            return
+        try:
+            project = load_project(self.store.job_dir(job.id))
+            if project is None:
+                raise ProcessingError("Save a karaoke project before rendering.")
+            self.store.update(job.id, karaoke_status="rendering", karaoke_progress=0, karaoke_message="Starting karaoke render", karaoke_error=None, karaoke_project_revision=project.revision, karaoke_updated_at=utc_now())
+            render_job(self.store.job_dir(job.id), project, lambda **changes: self.store.update(job.id, karaoke_progress=changes.get("progress", job.karaoke_progress), karaoke_message=changes.get("message", "Rendering karaoke video"), karaoke_updated_at=utc_now()))
+            self.store.update(job.id, karaoke_status="completed", karaoke_progress=100, karaoke_message="Karaoke video is ready", karaoke_error=None, karaoke_project_revision=project.revision, karaoke_rendered_revision=project.revision, karaoke_updated_at=utc_now())
+        except Exception as exc:
+            self.store.update(job.id, karaoke_status="failed", karaoke_progress=0, karaoke_message="Karaoke render failed", karaoke_error=self._render_error(exc), karaoke_updated_at=utc_now())
 
     def _run(self, job_id: str) -> None:
         job = self.store.get(job_id)

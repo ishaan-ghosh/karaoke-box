@@ -88,6 +88,7 @@ On macOS desktop-development mode, the equivalent platform application-data dire
 - Explicit job deletion; “Process another track” does not delete prior results
 - Desktop window refuses to close while a job is active
 - Selectable CPU separator engines: Demucs remains the default faster/current path; optional MelBand RoFormer is implemented as an experimental high-quality path
+- Post-separation Lyric Lab: user-selected synchronized LRCLIB lyrics, line timing edits, and local 1080p karaoke MP4 rendering; untimed alignment and per-word editing remain deferred
 
 ## Important implementation details
 
@@ -132,6 +133,20 @@ Non-negotiable implementation boundaries:
 - Routine tests must use mocks, fake models, and short self-created arrays; they must not download the checkpoint or run full inference.
 - Run `npm test` and `npm run desktop:smoke` before considering implementation complete. Do not dispatch Windows packaging.
 
+### Current feature batch: Karaoke Video Studio
+
+The Phase 1D line-timed Karaoke Video Studio is complete in the local working tree. After stem separation, the user can explicitly select synchronized LRCLIB lyrics, edit line timing and visual settings, preview against synchronized instrumental/vocal audio, and render a local karaoke MP4. `docs/KARAOKE_VIDEO.md` is the authoritative implementation and validation handoff.
+
+Important boundaries:
+
+- LRCLIB access is fixed to `https://lrclib.net`, bounded, redirect-restricted, and type-strict. Traditional synchronized LRC and valid version `1.0` `lyricsfile` YAML are accepted; YAML aliases, excessive depth/node counts, malformed timing, non-finite/oversized numeric values, and invalid provider records are rejected. Invalid provider word timing falls back to valid line timing.
+- Karaoke project, job-state, and optional canonical PNG background changes use revision-checked compare-and-commit under the job-store lock. A stale revision or active render is rejected; handled write failures restore the prior project/job/background state and remove staging files.
+- Separation and rendering share the existing single-worker executor. Render queueing is duplicate-safe and rolls back if submission fails. FFmpeg is streamed with `subprocess.Popen`; failure preserves the prior `karaoke.mp4`, terminates/reaps the child when needed, and removes partial/scratch output. Startup marks interrupted renders failed, and active rendering blocks deletion and normal desktop closure.
+- The renderer uses bundled, provenance-recorded OFL fonts rather than system fonts. Selected Latin faces have Noto fallback coverage for non-ASCII text and a checked symbol set; do not claim universal-script coverage. Font sources, package/release identities, checksums, embedded copyright notices, and OFL mapping are in `backend/app/karaoke_assets/PROVENANCE.md`.
+- The editor marks unsaved changes and the prior MP4 stale immediately, warns before browser unload or leaving the studio, saves before background upload/render, restores and polls active renders, and keeps instrumental/vocal preview seeking and playback synchronized with an adjustable vocal guide.
+- Untimed alignment, user `.lrc` import, manual per-word editing, a waveform editor, microphone/performance recording, mixed-performance exports, rights manifests, durable lyrics-license enforcement, and broader glyph coverage remain deferred.
+- Current evidence is local macOS development evidence only. The Karaoke Video Studio has not been built or smoke-tested in a Windows package, and historical run `29303479616` validates Phase 1C only. Do not claim production readiness, legal licensing, manual browser/accessibility validation, or Windows renderer validation.
+
 ### Required delegation for Phase 1C and future sessions
 
 Phase 1C implementation is locally complete; do not reopen its architecture or ask agents to redesign it. For any bounded future planning/planner work or review/reviewer work, use the installed `pi-subagents` package with `openai-codex/gpt-5.6-sol` at `xhigh` reasoning. For any implementation/writer/fix work, use `openai-codex/gpt-5.6-luna` at `xhigh` reasoning. Configure the builtin `planner`, `reviewer`, and `worker` overrides to those model/reasoning levels before starting; their packaged defaults use `high`.
@@ -170,6 +185,7 @@ There is deliberately no 24/48-hour cleanup. Only temporary separator working ou
 - `backend/app/jobs.py` — JSON job model/store and single-worker manager
 - `backend/app/processor.py` — ffprobe, source-neutral adapter orchestration, progress/ETA, output finalization
 - `backend/app/youtube.py` — YouTube URL validation, metadata preflight, controlled `yt-dlp` ingest
+- `backend/app/lyrics.py`, `backend/app/karaoke.py`, `backend/app/karaoke_renderer.py` — fixed-host LRCLIB lookup, versioned lyric projects, and local Pillow/FFmpeg karaoke rendering
 - `backend/app/rights.py` — shared source attestation text/version
 - `backend/app/profiles.py` — model/method/profile definitions
 - `backend/app/runtime.py` — frozen resources, bundled tools, Demucs/yt-dlp/separator command adapters and development worker cwd
@@ -225,39 +241,53 @@ The Windows workflow is manually dispatchable and also runs for `v*` tags. It:
 8. Builds an Inno Setup installer.
 9. Uploads `KaraokeBox-Windows-x64`.
 
-Known-good baseline:
+Historical packaged baseline:
 
 - Commit: `a9bd865`
 - Successful run: `29280123857`
 - Run URL: `https://github.com/ishaan-ghosh/karaoke-box/actions/runs/29280123857`
 - Artifact: `KaraokeBox-Windows-x64` (roughly 374 MB compressed)
 
-The artifact contains both the portable onedir app and installer. The executable is not standalone; the entire `dist/KaraokeBox` directory must remain together.
+Current Phase 1C Windows checkpoint:
+
+- Pushed commit: `1c5bfb2db59868ec20bff02be0ba41c323041afc` on `main`
+- Successful run: `29303479616`
+- Run URL: `https://github.com/ishaan-ghosh/karaoke-box/actions/runs/29303479616`
+- Artifact: `KaraokeBox-Windows-x64`, 383324580 compressed bytes
+- The run passed 61 backend tests plus frontend checks, the CPU-only Torch reinstall, PyInstaller onedir build, packaged authenticated startup/health and no-weight/no-network internal separator probe, Inno Setup installer build, and artifact upload.
+- The artifact includes the portable onedir app and installer. The MelBand checkpoint remains unbundled by design.
+
+The executable is not standalone; the entire `dist/KaraokeBox` directory must remain together.
 
 ## Testing status
 
-Current verified local Phase 1C state:
+Current verified local working-tree state:
 
-- 61 backend tests pass.
-- Frontend lint and production build pass.
-- Desktop development smoke test passes, including the no-weight/no-network separator worker probe.
-- Routine tests use mocks, fake models/processes, and short self-created arrays; they do not download the checkpoint or run full model inference.
-- A valid cached checkpoint, when present, is reused and is not redownloaded by routine validation.
-- The user completed full permitted real-song/fixture A/B listening with same-song comparisons against all three Demucs profiles. MelBand was preferred on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better.
-- The implementation remains experimental and is not production-ready pending the remaining release gates below.
+- 124 backend tests pass.
+- 8 Vitest tests pass, followed by oxlint, TypeScript compilation, and the Vite production build.
+- `npm --prefix web ci --offline --ignore-scripts` passes from the lockfile. The resolved frontend validation toolchain is Vite 8.1.4 and Vitest 4.1.9; the explicit `tinyexec` override resolves to 1.2.4.
+- Desktop development smoke passes, including authenticated startup/health and the no-weight/no-network separator worker probe.
+- The accepted self-created final render fixture at `/tmp/karaoke-box-render-accepted-ci9Va9/karaoke.mp4` was 50,547 bytes and probed as H.264, 1920×1080, 30 fps, yuv420p video plus AAC audio with a duration of 1.000000 seconds. Fixture inspection confirmed smart punctuation and a verified symbol glyph, with no surviving partial MP4, render scratch directory, or local-path disclosure.
+- Final fresh-context Sol backend and frontend review gates returned `ACCEPT`.
+- Routine validation remained offline/mock-based: it did not contact LRCLIB, download separator weights, run full separator inference, package Windows, or dispatch CI.
+- No manual browser matrix or assistive-technology validation was performed. These checks are local macOS development evidence, not Windows package evidence or production-readiness evidence.
+- The protected Phase 1C listening, Windows run, artifact, and target-laptop stem-audio facts below remain unchanged.
 
 Historical packaged Windows baseline `a9bd865`:
 
 - 11 backend tests passed at that commit.
 - Packaged startup/session/health smoke test passed.
 - Inno Setup build and artifact upload passed.
-- The Windows app has **not yet been manually exercised with a real song on the target Windows PC**. The user wants to add more features before that manual test.
+- That historical baseline predated the Phase 1C MelBand package and target-PC inference test; do not use it as evidence for the current separator.
 
 ## Known limitations and deferred work
 
-- No full packaged separator inference test or Phase 1C Windows package validation has passed; the current smoke path verifies startup/session/health and the no-weight/no-network worker probe without full inference.
+- Karaoke Video Studio is complete only as a locally validated, line-timed MVP. Untimed alignment, user `.lrc` import, manual per-word editing, waveform editing, microphone/performance recording, mixed-performance export, rights manifests, durable lyrics-license enforcement, and broader glyph coverage remain deferred.
+- Deferred application hardening includes cooperative cancellation and reaping of a running FFmpeg render during forced/abnormal shutdown, global UUID canonicalization of job IDs at the API/JobStore boundary, and ASGI-level request-body limits that reject oversized multipart bodies before parsing. Current upload limits are enforced while reading the parsed `UploadFile`.
+- Windows packaging for the renderer, bundled fonts/Pillow/PyYAML, and the libx264/AAC render path remains unverified. Packaged notice/license verification, clean-Windows renderer testing, and manual browser/accessibility testing are outstanding; historical run `29303479616` must not be cited as MP4-renderer evidence.
+- The current Windows run validates the frozen package and no-weight/no-network worker probe, and the target laptop completed one real packaged MelBand inference. A cached performance check covering the default 10-minute range, with target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision, remains outstanding.
 - Current Demucs separation can leave phasey/static-like vocal residue or damage overlapping instruments; the optional MelBand RoFormer engine is experimental and may have different artifacts.
-- MelBand RoFormer is not production-ready. The full permitted real-song/fixture A/B listening gate is complete: in same-song comparisons against all three Demucs profiles, the user preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Remaining gates are frozen Windows x64 worker/package validation and performance checks; real permitted-song processing on the target Windows PC; and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; operators can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+- MelBand RoFormer is not production-ready. The full permitted real-song/fixture A/B listening gate is complete: in same-song comparisons against all three Demucs profiles, the user preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Frozen Windows build/smoke and one target-PC real-song full inference are complete. Remaining release gates are packaged third-party-notice verification and a cached performance check covering the default 10-minute range with target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision. Broader clean-Windows release-matrix testing and signing remain separate release work. The default supported source-duration range is 10 minutes; operators can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 - Model weights download on first use and are not bundled.
 - Installer and executable are unsigned, so SmartScreen may warn.
 - No custom application icon yet.
@@ -268,6 +298,9 @@ Historical packaged Windows baseline `a9bd865`:
 - Portable and installer outputs are currently combined in one artifact; they could be split later.
 - GitHub Actions emits a non-blocking Node runtime deprecation annotation for current action versions.
 - Pytest emits a non-blocking Starlette/httpx deprecation warning.
+- The packaged Windows runtime currently uses Python 3.10; move the next Windows package to Python 3.11 to remove the nonfatal yt-dlp 2026.7.4 deprecation output.
+- One initial YouTube media transfer selected format 251 and failed with HTTP 403 after metadata succeeded; another YouTube video subsequently worked end to end. Treat this as transient/video- or route-specific evidence, not a fixed bug. Change yt-dlp retry/actionable diagnostics only from reproducible evidence.
+- `processor.py` can briefly publish `separating` before MelBand changes to `preparing`; this is cosmetic deferred maintenance.
 - A macOS PyInstaller build reached final bootloader conversion but was blocked by the development machine’s unaccepted Xcode license; Windows CI is authoritative.
 
 ## Git and workflow practices
@@ -278,3 +311,4 @@ Historical packaged Windows baseline `a9bd865`:
 - Use `gh run list`, `gh run view --log-failed`, and diagnostic artifacts to investigate Windows CI rather than asking the user to copy logs manually.
 - Do not commit or push unless the user asks.
 - Do not dispatch long CI builds unnecessarily; local tests and `desktop:smoke` should pass first.
+- The next session must inspect and preserve the current working tree, which contains the locally complete but uncommitted Phase 1D implementation, rather than resuming from only the pushed Phase 1C checkpoint. Keep Phase 1C architecture frozen, preserve Demucs as the default faster/current engine, and preserve the permanent CPU-only boundary: do not add CUDA, MPS, or DirectML.

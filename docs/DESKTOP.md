@@ -13,6 +13,7 @@ Karaoke Box.exe
   |-- pinned yt-dlp YouTube ingest
   |-- FFmpeg/ffprobe executables
   |-- Demucs default + optional experimental MelBand RoFormer + CPU-only PyTorch
+  |-- Pillow/FFmpeg local karaoke video renderer
   |-- JSON job metadata
   +-- persistent files in %LOCALAPPDATA%\Karaoke Box\
 ```
@@ -39,8 +40,8 @@ The application is permanently CPU-only. It always invokes Demucs with `--device
 3. It opens a pywebview window pointing at the local application URL.
 4. The React application uses the existing HTTP job API and polling.
 5. The selected separator runs in a separate child process so inference cannot freeze the UI. In development, the MelBand child keeps `python -u -m app.separators.worker` and runs with the repository's `backend` directory as cwd; this is required because Uvicorn's `--app-dir backend` import path does not propagate to child interpreters.
-6. Closing the window prompts when processing is active. The first version may either cancel/mark interrupted or remain in the system tray.
-7. On a clean exit, the API and its child process tree shut down.
+6. Completed stem jobs can queue a karaoke render on the same single-worker executor. FFmpeg runs as a streamed child process, and queued/rendering karaoke state is persisted, polled by the UI, and treated as active work.
+7. Closing the window is refused while ingest, separation, or karaoke rendering is active. When no work is active and the window closes normally, the manager stops accepting new work, cancels futures that have not started, and the API stops. On the next startup, an interrupted active render is marked failed for explicit retry. Cooperative cancellation of an already-running FFmpeg child during forced or abnormal shutdown remains deferred.
 
 The random port and per-launch token prevent unrelated websites or local processes from casually invoking the media API. CORS alone is not sufficient protection for a localhost service.
 
@@ -60,6 +61,10 @@ Use `platformdirs` rather than repository-relative paths.
     yt-dlp.log
     instrumental.wav
     vocals.wav
+    karaoke-project.json
+    karaoke-background.png
+    karaoke-render.log
+    karaoke.mp4
   logs\
 ```
 
@@ -146,7 +151,7 @@ Windows artifacts cannot be produced reliably from macOS. Add a GitHub Actions w
 8. Build the Inno Setup installer.
 9. Upload both the unpacked application and installer as workflow artifacts.
 
-A Windows machine must still test the implementation before release:
+A Windows machine must still complete the broader release matrix before release:
 
 - clean install and uninstall,
 - startup without developer tools or Python installed,
@@ -160,7 +165,7 @@ A Windows machine must still test the implementation before release:
 - Windows Defender/SmartScreen behavior,
 - CPU usage, peak RAM, scratch disk, and runtime for each separator engine/profile.
 
-MelBand remains experimental and is not production-ready. The full permitted real-song/fixture A/B listening gate is complete: the user made same-song comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Remaining release gates are frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and verification that packaged third-party notices are present. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+MelBand remains experimental and is not production-ready. The full permitted real-song/fixture A/B listening gate is complete: the user made same-song comparisons against all three Demucs profiles and preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Frozen Windows build/smoke and one target-PC real-song full inference are complete at pushed commit `1c5bfb2db59868ec20bff02be0ba41c323041afc`, workflow run `29303479616`. The user installed that artifact smoothly on an older Windows laptop and completed one roughly 3-minute user-attested YouTube-to-karaoke-use conversion (stem separation producing instrumental/vocal audio, not this MP4 renderer) in about 30–40 minutes. Hardware, peak RAM/disk, setup-versus-cached timing, and exact elapsed time were not recorded, so this is compatibility evidence rather than a performance promise or minimum specification. Remaining release gates are packaged third-party-notice verification and a cached performance check covering the default 10-minute range with target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision. Broader clean-Windows release-matrix testing and signing remain separate work. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 ## Migration from the current app
 
@@ -173,7 +178,7 @@ MelBand remains experimental and is not production-ready. The full permitted rea
 7. Add session-token protection for the loopback API.
 8. Create the PyInstaller spec and GitHub Actions Windows build.
 9. Create the Inno Setup installer and test it on clean Windows.
-10. Phase 1C implements the frozen generic separator worker/probe and optional verified MelBand model cache without bundling its weights; frozen Windows validation remains pending.
+10. Phase 1C implements the frozen generic separator worker/probe and optional verified MelBand model cache without bundling its weights; frozen Windows build/smoke and one target-PC real-song full inference are complete. Packaged third-party-notice verification and a cached default-10-minute performance check remain pending.
 
 ## Optional hosted future
 

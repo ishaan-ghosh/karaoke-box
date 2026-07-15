@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,6 +25,14 @@
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "std-env": "4.1.0",
+    "es-module-lexer": "2.1.0",
+    "obug": "2.1.3",
+    "tinyexec": "1.2.4",
+    "tinyrainbow": "3.1.0"
   }
 }

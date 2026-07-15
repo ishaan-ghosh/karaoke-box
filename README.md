@@ -21,6 +21,7 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 - Reload-safe active-job restoration and local recent-results history
 - Synchronized instrumental/vocal preview
 - Instrumental WAV export
+- DECK-01 Lyric Lab with explicit synchronized LRCLIB selection, line timing edits, and local 1080p karaoke MP4 rendering
 - pywebview desktop runtime and Windows x64 packaging pipeline
 - CPU-only PyTorch/Demucs packaging plus the optional MelBand runtime; no CUDA build
 
@@ -28,7 +29,7 @@ Removing vocals does **not** remove copyright or guarantee that a platform will 
 
 The selectable Phase 1C implementation is locally complete but remains an **experimental, not production-ready** feature. **Demucs** remains the default faster/current engine with all three existing profiles unchanged. **Kimberley Jensen MelBand RoFormer** is an optional high-quality CPU engine selected by the user. Candidate research found it was the strongest screened option with an explicit MIT checkpoint license and reproducible immutable source. See `docs/SEPARATOR_UPGRADE.md` for measured CPU/RAM results, rejected alternatives, pinned hashes, implementation details, and release gates.
 
-All separator paths remain permanently CPU-only. On first use, the roughly 871 MiB optional checkpoint downloads into the local model cache and is verified against its pinned size and SHA-256; it remains until explicit deletion. The checkpoint is not bundled in the installer. Routine tests mock the engine and downloader rather than fetching weights or performing full inference. The user completed full permitted real-song/fixture A/B listening with same-song comparisons against all three Demucs profiles: MelBand was preferred on every test, vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. Release remains blocked pending frozen Windows x64 worker/package validation and performance checks, real permitted-song processing on the target Windows PC, and packaged third-party-notice verification. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
+All separator paths remain permanently CPU-only. On first use, the roughly 871 MiB optional checkpoint downloads into the local model cache and is verified against its pinned size and SHA-256; it remains until explicit deletion. The checkpoint is not bundled in the installer. Routine tests mock the engine and downloader rather than fetching weights or performing full inference. The user completed full permitted real-song/fixture A/B listening with same-song comparisons against all three Demucs profiles: MelBand was preferred on every test, vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. The current pushed Windows checkpoint is `1c5bfb2db59868ec20bff02be0ba41c323041afc`; workflow run `29303479616` passed tests, CPU-only packaging, packaged smoke/probe, PyInstaller, Inno Setup, and artifact upload. The user installed that artifact smoothly on the target older Windows laptop and completed one roughly 3-minute user-attested YouTube-to-karaoke-use MelBand conversion (stem separation producing instrumental/vocal audio, not this MP4 renderer) in about 30–40 minutes. Hardware, peak RAM/disk, setup-versus-cached timing, and exact elapsed time were not recorded, so this is compatibility evidence rather than a performance promise or minimum specification. Release remains blocked pending packaged third-party-notice verification and a cached performance check covering the default 10-minute range with target hardware, elapsed time, peak RAM/disk, and an explicit acceptability decision. Broader clean-Windows release-matrix testing and signing remain separate work. The default supported source-duration range is 10 minutes; an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS` when local policy and hardware permit.
 
 ## Source inputs and rights
 
@@ -45,7 +46,7 @@ The job metadata records YouTube provenance for the future `rights-manifest.json
 ## Prerequisites
 
 - Node.js 20.19+ or 22.12+
-- Python 3.10–3.12
+- Python 3.10–3.12 for development; the next packaged Windows runtime should move from Python 3.10 to Python 3.11
 - [`uv`](https://docs.astral.sh/uv/)
 - FFmpeg and ffprobe
 
@@ -182,9 +183,17 @@ To run the no-weight/no-network worker probe directly, use:
 
 The same probe runs as part of `npm run desktop:smoke`. The probe validates the pinned runtime/configuration and CPU mode without downloading the checkpoint or running inference.
 
+### Karaoke video studio
+
+After separation, open **Create karaoke video** to search LRCLIB, explicitly choose synchronized lyrics, preview them against the instrumental and optional vocal guide, edit line timing, and render a local 1920×1080 H.264/AAC MP4. Track metadata and search text are sent to the fixed LRCLIB service; the selected record ID is retained in the local karaoke project. Karaoke Box does not claim that returned lyrics are licensed. Untimed text alignment and per-word editing are deferred. See `docs/KARAOKE_VIDEO.md`.
+
+### YouTube ingest and separation diagnostics
+
+One initial packaged YouTube transfer selected format 251 and failed with HTTP 403 after metadata succeeded; a different YouTube video subsequently worked end to end. The 403 is recorded as transient/video- or route-specific evidence, not as fixed behavior. If it recurs, inspect the job's `yt-dlp.log` and preserve the actionable final diagnostic before changing retry behavior. The pinned yt-dlp 2026.7.4 Python 3.10 deprecation message is nonfatal but noisy; the next Windows package should move to Python 3.11.
+
 ### Separation is slow
 
-The MVP deliberately uses CPU processing. Runtime varies by engine, model, track length, and machine; a full song can take several minutes. Demucs Best Quality runs a bag of fine-tuned models and can take several times longer. The default supported source-duration range is 10 minutes, while an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS`. MelBand is experimental and still requires frozen Windows, target-PC, and packaged-notice gates. In completed full-matrix same-song A/B testing against all three Demucs profiles, the user preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better.
+The MVP deliberately uses CPU processing. Runtime varies by engine, model, track length, and machine; a full song can take several minutes. Demucs Best Quality runs a bag of fine-tuned models and can take several times longer. The default supported source-duration range is 10 minutes, while an operator can intentionally raise it with `KARAOKE_MAX_DURATION_SECONDS`. MelBand is experimental and remains CPU-only; do not add CUDA, MPS, or DirectML even when a target laptop has NVIDIA hardware. In completed full-matrix same-song A/B testing against all three Demucs profiles, the user preferred MelBand on every test; vocal residual was negligible with faint static still audible, instrument damage was effectively imperceptible, and karaoke usefulness was substantially better. The target older Windows laptop completed one roughly 3-minute packaged YouTube-to-karaoke MelBand stem separation, producing instrumental/vocal audio rather than an MP4, in about 30–40 minutes; this was not a controlled benchmark and is not a Windows performance promise.
 
 The UI combines Demucs's processed-audio counters across every model pass. ETA appears once the first audio segment completes and is recalculated from observed CPU speed. It can move up or down as later segments run. A first-time model download happens before measurable inference, so no reliable ETA is shown during that setup.
 

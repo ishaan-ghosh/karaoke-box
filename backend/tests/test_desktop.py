@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app import desktop
+from app.jobs import JobStore
 
 
 def test_internal_separator_dispatch_preserves_private_arguments(
@@ -48,6 +49,19 @@ def test_desktop_environment_sets_model_root_and_preserves_cpu_caches(
     assert desktop.os.environ["HF_HOME"] == str(model_root / "huggingface")
     assert desktop.os.environ["CUDA_VISIBLE_DEVICES"] == ""
     assert model_root.is_dir()
+
+
+def test_active_job_scan_is_not_limited_to_recent_history(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs")
+    oldest = store.create("old.wav", "source.wav", 10)
+    for index in range(100):
+        job = store.create(f"job-{index}.wav", "source.wav", 10)
+        store.update(job.id, status="completed")
+    store.update(oldest.id, status="completed", karaoke_status="rendering")
+
+    assert store.has_active_jobs()
+    store.update(oldest.id, karaoke_status="failed")
+    assert not store.has_active_jobs()
 
 
 def test_separator_probe_uses_private_worker_command_without_model_arguments(

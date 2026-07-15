@@ -13,12 +13,17 @@ if not frontend.is_dir():
 datas = [(str(frontend), "web/dist")]
 binaries = []
 hiddenimports = [
+    "app.karaoke",
+    "app.karaoke_renderer",
+    "app.lyrics",
     "app.separators.worker",
     "app.separators.melband",
     "app.separators.model_cache",
     "app.separators.vendor.attend",
     "app.separators.vendor.mel_band_roformer",
     "app.separators.vendor.mel_filter",
+    "PIL",
+    "yaml",
 ]
 
 for package in (
@@ -41,9 +46,11 @@ datas += [
     (str(separator_root / "models" / "PROVENANCE.md"), "app/separators/models"),
     (str(separator_root / "vendor" / "LICENSE"), "app/separators/vendor"),
     (str(separator_root / "vendor" / "PROVENANCE.md"), "app/separators/vendor"),
+    (str(repo_root / "backend" / "app" / "karaoke_assets" / "PROVENANCE.md"), "app/karaoke_assets"),
+    (str(repo_root / "backend" / "app" / "karaoke_assets" / "fonts"), "app/karaoke_assets/fonts"),
 ]
 
-for package in ("demucs", "pywebview", "platformdirs", "yt-dlp"):
+for package in ("demucs", "pywebview", "platformdirs", "yt-dlp", "Pillow", "PyYAML"):
     try:
         datas += copy_metadata(package)
     except Exception:

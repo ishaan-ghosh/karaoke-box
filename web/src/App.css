@@ -156,6 +156,11 @@
   grid-template-columns: 264px minmax(0, 1fr) 316px;
   min-height: 0;
 }
+.deck-body--karaoke { grid-template-columns: minmax(0, 1fr); }
+.deck-body--karaoke .rail-shell,
+.deck-body--karaoke .console { display: none; }
+.deck-body--karaoke .stage { padding: 0; overflow: auto; }
+.deck-body--karaoke .stage-view--wide { width: 100%; }
 
 /* ---- left rail: set list ------------------------------------ */
 
@@ -455,6 +460,12 @@
   justify-content: center;
   gap: clamp(10px, 2vh, 20px);
   min-height: 0;
+}
+
+.stage-view--wide {
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: auto;
 }
 
 /* -- platter -- */
@@ -1534,6 +1545,7 @@ fieldset.module legend { padding: 0; }
   .platter-zone { width: min(78vw, 340px); }
 
   .console { order: 2; border-left: 0; border-top: 1px solid var(--seam); overflow: visible; }
+  .deck-body--karaoke .stage { order: 1; }
 
   .deck-bottom { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 18px; }
 

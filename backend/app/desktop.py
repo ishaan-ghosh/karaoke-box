@@ -165,7 +165,7 @@ def _run_desktop(smoke_test: bool) -> int:
     _desktop_log(f"desktop start; smoke_test={smoke_test}; data_root={data_root}")
 
     _desktop_log("importing application")
-    from .main import ACTIVE_STATUSES, job_manager, job_store
+    from .main import job_manager, job_store
     from .runtime import web_dist_dir
 
     if not web_dist_dir().is_dir():
@@ -201,7 +201,7 @@ def _run_desktop(smoke_test: bool) -> int:
         )
 
         def prevent_close_while_processing() -> bool:
-            if any(job.status in ACTIVE_STATUSES for job in job_store.list(100)):
+            if job_store.has_active_jobs():
                 window.evaluate_js(
                     "alert('A track is still processing. Wait for it to finish before closing Karaoke Box.')"
                 )

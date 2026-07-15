@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { activeLine, activeWord, editLineText, lineIntervals, shiftLine, sortLines, type KaraokeProject, type KaraokeState, type LyricLine, type LyricsCandidate } from '../karaoke'
+import { activeLine, activeWord, canReplaceLyrics, editLineText, lineIntervals, lyricsView, shiftLine, sortLines, type KaraokeProject, type KaraokeState, type LyricLine, type LyricsCandidate } from '../karaoke'
+import { closeStemPreviewGraph, createStemPreviewGraph, playStemPreview, updateStemPreviewGain, type StemPreviewGraph } from '../previewAudio'
 import './KaraokeStudio.css'
 
 type Job = {
@@ -74,6 +75,10 @@ export function Preview({ project, current, currentWord, timeMs, customUrl }: { 
   )
 }
 
+export function ChangeLyricsAction({ disabled, onChange, buttonRef }: { disabled: boolean; onChange: () => void; buttonRef?: RefObject<HTMLButtonElement | null> }) {
+  return <button ref={buttonRef} className="label-button" type="button" disabled={disabled} onClick={onChange}>Change lyrics</button>
+}
+
 type SearchPanelProps = {
   title: string
   artist: string
@@ -87,12 +92,16 @@ type SearchPanelProps = {
   error: string
   onSearch: () => void
   onChoose: (candidate: LyricsCandidate) => void
+  titleRef?: RefObject<HTMLInputElement | null>
+  showCancel?: boolean
+  onCancel?: () => void
+  blocked?: boolean
   loadError: boolean
   onRetry: () => void
 }
 
-export function SearchPanel({ title, artist, album, setTitle, setArtist, setAlbum, candidates, searched, operation, error, onSearch, onChoose, loadError, onRetry }: SearchPanelProps) {
-  const busy = operation !== null
+export function SearchPanel({ title, artist, album, setTitle, setArtist, setAlbum, candidates, searched, operation, error, onSearch, onChoose, titleRef, showCancel = false, onCancel, blocked = false, loadError, onRetry }: SearchPanelProps) {
+  const busy = operation !== null || blocked
   return (
     <div className="lyric-lab__search">
       <div className="lyric-disclosure" role="note">
@@ -102,12 +111,13 @@ export function SearchPanel({ title, artist, album, setTitle, setArtist, setAlbu
       {loadError ? (
         <div className="lyric-status" role="alert">Could not load the saved lyric project. <button className="label-button" type="button" onClick={onRetry}>Retry load</button></div>
       ) : <>
-        <label>Track title<input value={title} disabled={busy} onChange={(event) => setTitle(event.target.value)} /></label>
+        <label>Track title<input ref={titleRef} value={title} disabled={busy} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>Artist<input value={artist} disabled={busy} onChange={(event) => setArtist(event.target.value)} /></label>
         <label>Album (optional)<input value={album} disabled={busy} onChange={(event) => setAlbum(event.target.value)} /></label>
         <button className="start-button" type="button" disabled={busy || !title.trim() || !artist.trim()} onClick={onSearch}>
           {busy ? 'Searching…' : 'Search LRCLIB'}
         </button>
+        {showCancel && <button className="label-button" type="button" disabled={busy} onClick={onCancel}>Cancel lyric change</button>}
       </>}
       {operation === 'loading' && <p className="lyric-status" role="status">Loading saved lyric project…</p>}
       {operation === 'searching' && <p className="lyric-status" role="status">Searching LRCLIB…</p>}
@@ -130,7 +140,7 @@ export function SearchPanel({ title, artist, album, setTitle, setArtist, setAlbu
   )
 }
 
-function PreviewSection({ project, current, currentWord, customUrl, duration, timeMs, instrumental, vocals, instrumentalUrl, vocalsUrl, onSeek, onDuration, onTime, onError, onPause, onEnded }: {
+function PreviewSection({ project, current, currentWord, customUrl, duration, timeMs, instrumental, vocals, instrumentalUrl, vocalsUrl, onSeek, onDuration, onTime, onError, onPause, onEnded, onUnmount }: {
   project: KaraokeProject
   current: number
   currentWord: number
@@ -145,21 +155,24 @@ function PreviewSection({ project, current, currentWord, customUrl, duration, ti
   onError: (message: string) => void
   onPause: () => void
   onEnded: () => void
+  onUnmount: () => void
   instrumentalUrl: string
   vocalsUrl: string
 }) {
+  useLayoutEffect(() => onUnmount, [onUnmount])
   return (
     <div className="lyric-lab__preview">
       <Preview project={project} current={current} currentWord={currentWord} timeMs={timeMs} customUrl={customUrl} />
       <input className="lyric-seek" aria-label="Preview position" type="range" min="0" max={Math.max(1, duration)} step="10" value={Math.min(timeMs, duration || 1)} onChange={(event) => onSeek(Number(event.target.value))} />
-      <audio ref={instrumental} src={instrumentalUrl} onLoadedMetadata={(event) => onDuration(event.currentTarget.duration * 1000)} onTimeUpdate={(event) => onTime(event.currentTarget.currentTime * 1000)} onPause={onPause} onError={() => onError('The instrumental preview could not be loaded.')} onEnded={onEnded} />
-      <audio ref={vocals} src={vocalsUrl} onError={() => onError('The vocal guide preview could not be loaded.')} />
+      <audio ref={instrumental} src={instrumentalUrl} preload="auto" onLoadedMetadata={(event) => onDuration(event.currentTarget.duration * 1000)} onTimeUpdate={(event) => onTime(event.currentTarget.currentTime * 1000)} onPause={onPause} onError={() => onError('The instrumental preview could not be loaded.')} onEnded={onEnded} />
+      <audio ref={vocals} src={vocalsUrl} preload="auto" onError={() => onError('The vocal guide preview could not be loaded.')} />
     </div>
   )
 }
 
 export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }: Props) {
   const [project, setProject] = useState<KaraokeProject | null>(null)
+  const [changingLyrics, setChangingLyrics] = useState(false)
   const [state, setState] = useState<KaraokeState>(emptyState)
   const [title, setTitle] = useState(job.title || job.original_filename.replace(/\.[^.]+$/, ''))
   const [artist, setArtist] = useState(job.uploader || '')
@@ -176,13 +189,23 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
   const [vocalVolume, setVocalVolume] = useState(0.15)
   const instrumental = useRef<HTMLAudioElement>(null)
   const vocals = useRef<HTMLAudioElement>(null)
+  const previewGraph = useRef<StemPreviewGraph | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
+  const searchTitle = useRef<HTMLInputElement>(null)
+  const changeLyricsButton = useRef<HTMLButtonElement>(null)
+  const wasChangingLyrics = useRef(false)
   const returnFocus = useRef<HTMLElement | null>(null)
   const assetsRef = useRef(job.assets)
   const setDirtyState = useCallback((next: boolean) => {
     setDirty(next)
     onDirtyChange(next)
   }, [onDirtyChange])
+  const closePreviewGraph = useCallback(() => {
+    if (previewGraph.current) {
+      closeStemPreviewGraph(previewGraph.current)
+      previewGraph.current = null
+    }
+  }, [])
   const stopPlayback = useCallback((reset = false) => {
     instrumental.current?.pause()
     vocals.current?.pause()
@@ -216,12 +239,22 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
   useEffect(() => {
     returnFocus.current = document.activeElement as HTMLElement | null
   }, [])
+  useEffect(() => {
+    if (changingLyrics) searchTitle.current?.focus()
+    else if (wasChangingLyrics.current) changeLyricsButton.current?.focus()
+    wasChangingLyrics.current = changingLyrics
+  }, [changingLyrics])
+  useEffect(() => {
+    const graph = previewGraph.current
+    if (graph) updateStemPreviewGain(graph, vocalVolume)
+  }, [vocalVolume])
   useLayoutEffect(() => () => {
     instrumental.current?.pause()
     vocals.current?.pause()
     if (instrumental.current) instrumental.current.currentTime = 0
     if (vocals.current) vocals.current.currentTime = 0
-  }, [])
+    closePreviewGraph()
+  }, [closePreviewGraph])
   useEffect(() => {
     if (!dirty) return
     const preventDirtyLoss = (event: BeforeUnloadEvent) => {
@@ -341,7 +374,28 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
     }
   }
 
+  const changeLyrics = () => {
+    if (!project || mutating) return
+    stopPlayback(true)
+    setTitle(project.record.title)
+    setArtist(project.record.artist)
+    setAlbum(project.record.album)
+    setCandidates([])
+    setSearched(false)
+    setError('')
+    setChangingLyrics(true)
+  }
+
+  const cancelLyricsChange = () => {
+    if (mutating) return
+    setCandidates([])
+    setSearched(false)
+    setError('')
+    setChangingLyrics(false)
+  }
+
   const choose = async (candidate: LyricsCandidate) => {
+    if (!canReplaceLyrics(dirty, () => window.confirm('Discard unsaved lyric edits and replace the selected lyrics?'))) return
     setOperation('selecting')
     setError('')
     try {
@@ -356,8 +410,9 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
       setState(payload.state)
       setCandidates([])
       setDirtyState(false)
+      setChangingLyrics(false)
       heading.current?.focus()
-      onUpdated({ karaoke_status: payload.state.status, karaoke_project_revision: payload.state.project_revision, karaoke_rendered_revision: payload.state.rendered_revision })
+      onUpdated({ karaoke_status: payload.state.status, karaoke_progress: payload.state.progress, karaoke_message: payload.state.message, karaoke_error: payload.state.error, karaoke_project_revision: payload.state.project_revision, karaoke_rendered_revision: payload.state.rendered_revision })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not select lyrics.')
     } finally {
@@ -412,6 +467,16 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
     setTimeMs(value)
   }
 
+  const ensurePreviewGraph = () => {
+    if (previewGraph.current) return previewGraph.current
+    const main = instrumental.current
+    const guide = vocals.current
+    if (!main || !guide) return null
+    const graph = createStemPreviewGraph(main, guide, vocalVolume)
+    previewGraph.current = graph
+    return graph
+  }
+
   const togglePlayback = async () => {
     const main = instrumental.current
     const guide = vocals.current
@@ -424,9 +489,9 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
     }
     setError('')
     try {
-      guide.currentTime = main.currentTime
-      guide.volume = vocalVolume
-      await Promise.all([main.play(), guide.play()])
+      const graph = ensurePreviewGraph()
+      if (!graph) return
+      await playStemPreview(graph, main, guide)
       setPlaying(true)
     } catch {
       main.pause()
@@ -441,6 +506,7 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
     mark({ ...project, lines: project.lines.map((entry, candidate) => candidate === index ? line : entry) })
   }
 
+  const view = lyricsView(project, changingLyrics)
   return (
     <section className="lyric-lab" aria-labelledby="lyric-lab-title">
       <header className="lyric-lab__header">
@@ -451,13 +517,14 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
         </div>
         <button className="eject-button" type="button" disabled={operation !== null} onClick={() => { if (dirty && !window.confirm('Discard unsaved lyric edits?')) return; onClose() }}>Back to deck</button>
       </header>
-      {!project ? (
-        <SearchPanel title={title} artist={artist} album={album} setTitle={(value) => { setTitle(value); setCandidates([]); setSearched(false) }} setArtist={(value) => { setArtist(value); setCandidates([]); setSearched(false) }} setAlbum={(value) => { setAlbum(value); setCandidates([]); setSearched(false) }} candidates={candidates} searched={searched} operation={operation === 'loading' || operation === 'searching' || operation === 'selecting' ? operation : null} error={error} onSearch={() => void search()} onChoose={(candidate) => void choose(candidate)} loadError={loadError} onRetry={() => { setLoadError(false); setOperation('loading'); void load().catch((reason: unknown) => { setLoadError(true); setError(reason instanceof Error ? reason.message : 'Could not load karaoke project.') }).finally(() => setOperation(null)) }} />
+      {view === 'search' || project === null ? (
+        <SearchPanel title={title} artist={artist} album={album} setTitle={(value) => { setTitle(value); setCandidates([]); setSearched(false) }} setArtist={(value) => { setArtist(value); setCandidates([]); setSearched(false) }} setAlbum={(value) => { setAlbum(value); setCandidates([]); setSearched(false) }} candidates={candidates} searched={searched} operation={operation === 'loading' || operation === 'searching' || operation === 'selecting' ? operation : null} error={error} onSearch={() => void search()} onChoose={(candidate) => void choose(candidate)} titleRef={searchTitle} showCancel={Boolean(project)} onCancel={cancelLyricsChange} blocked={mutating} loadError={loadError} onRetry={() => { setLoadError(false); setOperation('loading'); void load().catch((reason: unknown) => { setLoadError(true); setError(reason instanceof Error ? reason.message : 'Could not load karaoke project.') }).finally(() => setOperation(null)) }} />
       ) : (
         <>
           <div className="lyric-lab__toolbar">
             <button type="button" className="play-button" onClick={() => void togglePlayback()}>{playing ? 'Pause' : 'Play'}</button>
             <span>{Math.floor(timeMs / 60000)}:{String(Math.floor(timeMs / 1000) % 60).padStart(2, '0')} · {project.record.title} · Lyrics via LRCLIB</span>
+            <ChangeLyricsAction disabled={mutating} onChange={changeLyrics} buttonRef={changeLyricsButton} />
             <label>Offset <input type="number" min={-120000} max={120000} value={project.offset_ms} disabled={mutating} onChange={(event) => mark({ ...project, offset_ms: Math.max(-120000, Math.min(120000, Number(event.target.value) || 0)) })} /> ms</label>
           </div>
           <PreviewSection
@@ -477,6 +544,7 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
             onError={(message) => { stopPlayback(true); setError(message) }}
             onPause={() => setPlaying(false)}
             onEnded={() => stopPlayback(true)}
+            onUnmount={closePreviewGraph}
           />
           <div className="lyric-lab__controls">
             <label>Video title<input maxLength={300} value={project.title} disabled={mutating} onChange={(event) => mark({ ...project, title: event.target.value })} /></label>
@@ -489,7 +557,7 @@ export function KaraokeStudio({ job, apiUrl, onClose, onUpdated, onDirtyChange }
             <label>Inactive color<input type="color" disabled={mutating} value={project.visual.inactive_color} onChange={(event) => mark({ ...project, visual: { ...project.visual, inactive_color: event.target.value } })} /></label>
             <label>Highlight color<input type="color" disabled={mutating} value={project.visual.highlight_color} onChange={(event) => mark({ ...project, visual: { ...project.visual, highlight_color: event.target.value } })} /></label>
             <label>Font<select value={project.visual.font} disabled={mutating} onChange={(event) => mark({ ...project, visual: { ...project.visual, font: event.target.value as KaraokeProject['visual']['font'] } })}><option value="sans">Archivo sans</option><option value="display">Doto display</option><option value="mono">Spline Sans Mono</option></select></label>
-            <label>Vocal guide<input type="range" min="0" max="1" step="0.01" value={vocalVolume} onChange={(event) => { const value = Number(event.target.value); setVocalVolume(value); if (vocals.current) vocals.current.volume = value }} /></label>
+            <label>Vocal guide<input type="range" min="0" max="1" step="0.01" value={vocalVolume} onChange={(event) => setVocalVolume(Number(event.target.value))} /></label>
             <label>Custom background<input type="file" accept=".png,.jpg,.jpeg,.webp" disabled={mutating} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadBackground(file) }} /></label>
             <button className="label-button" type="button" disabled={mutating || !dirty} onClick={() => void save(project)}>Save timing &amp; style</button>
           </div>

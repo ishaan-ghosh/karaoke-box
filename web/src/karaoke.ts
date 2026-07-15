@@ -39,6 +39,16 @@ export type LyricsCandidate = {
   instrumental: boolean
 }
 
+export type LyricsStudioView = 'search' | 'editor'
+
+export function lyricsView(project: KaraokeProject | null, changingLyrics: boolean): LyricsStudioView {
+  return project && !changingLyrics ? 'editor' : 'search'
+}
+
+export function canReplaceLyrics(dirty: boolean, confirmReplacement: () => boolean): boolean {
+  return !dirty || confirmReplacement()
+}
+
 export function lineIntervals(lines: LyricLine[], durationMs: number, offsetMs = 0) {
   const bounded = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0)
   return lines.map((line, index) => {
